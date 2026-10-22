@@ -3,16 +3,18 @@
 Telegram to Dropbox Auto-Sync Engine (Production MTProto Edition)
 Author: Automated Cloud Solutions
 Description: High-performance Telegram-to-Dropbox sync bot supporting files up to 2 GB,
-             chunked cloud uploads, automatic FIFO folder retention, and native clipboard actions.
+             chunked cloud uploads, automatic FIFO folder retention, reliable 1-tap copy
+             blocks, and instant stop controls via Telegram /stop command or OS signals.
 """
 
 import os
 import sys
 import time
+import signal
 import asyncio
 import logging
 import tempfile
-from typing import Tuple, List, Optional, Set
+from typing import Tuple, List, Optional, Set, Dict
 
 from telethon import TelegramClient, events, Button
 from telethon.tl import types
@@ -47,6 +49,10 @@ AUTHORIZED_USER_IDS_RAW = os.getenv("AUTHORIZED_USER_IDS", "").strip()
 MAX_RUN_TIME_MINUTES = int(os.getenv("MAX_RUN_TIME_MINUTES", "340"))
 MAX_FILES_IN_FOLDER = int(os.getenv("MAX_FILES_IN_FOLDER", "2"))
 CHUNK_SIZE_MB = int(os.getenv("CHUNK_SIZE_MB", "8"))
+
+# Track Bot Startup Time and Active Links Cache
+START_TIMESTAMP = time.time()
+ACTIVE_LINKS_CACHE: Dict[int, str] = {}
 
 # Validate Telegram Environment
 if not TELEGRAM_BOT_TOKEN:
@@ -222,10 +228,39 @@ def execute_dropbox_upload(
 # Telethon Client Initialization
 # ---------------------------------------------------------------------------
 client = TelegramClient("bot_session", int(TELEGRAM_API_ID), TELEGRAM_API_HASH)
+shutdown_event = asyncio.Event()
 
+# ---------------------------------------------------------------------------
+# Interactive Callback Query Handler (Handles Copy Button clicks)
+# ---------------------------------------------------------------------------
+@client.on(events.CallbackQuery)
+async def handle_callback_query(event):
+    """Handles inline button clicks, alerting the user and sending a dedicated 1-tap copy block."""
+    sender_id = event.sender_id
+    if not is_authorized(sender_id):
+        await event.answer("⛔ Access Denied.", alert=True)
+        return
+
+    msg_id = event.message_id
+    url = ACTIVE_LINKS_CACHE.get(msg_id)
+
+    if url:
+        # Show immediate alert dialog with copy action
+        await event.answer("Link ready! Tap the box below to copy.", alert=False)
+        # Send clean dedicated preformatted block (Telegram renders built-in Copy icon on this)
+        await event.reply(
+            f"📋 **Tap below to copy your Dropbox link:**\n\n"
+            f"```{url}```"
+        )
+    else:
+        await event.answer("Tap the monospace link in the message above to copy directly!", alert=True)
+
+# ---------------------------------------------------------------------------
+# Primary Message & Media Ingestion Handler
+# ---------------------------------------------------------------------------
 @client.on(events.NewMessage)
 async def handle_incoming_message(event):
-    """Primary handler for direct messages and media ingestion."""
+    """Primary handler for direct messages, media ingestion, and remote controls."""
     if not event.is_private:
         return
 
@@ -242,6 +277,43 @@ async def handle_incoming_message(event):
         )
         return
 
+    # Command: /stop or /shutdown (Instantly kills the GitHub Action runner)
+    if event.raw_text in ["/stop", "/shutdown", "/kill"]:
+        elapsed = int(time.time() - START_TIMESTAMP)
+        await event.reply(
+            "🛑 **STOPPING GITHUB ACTIONS RUNNER**\n"
+            "━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            f"⏱️ **Session Uptime:** `{elapsed // 60}m {elapsed % 60}s`\n"
+            "✅ Daemon disconnecting and terminating runner cleanly with exit code 0."
+        )
+        logger.info(f"Stop command received from authorized user {user_id}. Terminating...")
+        shutdown_event.set()
+        await client.disconnect()
+        return
+
+    # Command: /status (Health and current Dropbox inventory)
+    if event.raw_text in ["/status", "/info"]:
+        elapsed = int(time.time() - START_TIMESTAMP)
+        file_count = 0
+        try:
+            res = dbx.files_list_folder(DROPBOX_TARGET_FOLDER)
+            file_count = len([e for e in res.entries if isinstance(e, FileMetadata)])
+        except Exception:
+            pass
+
+        status_msg = (
+            "📊 **RUNNER STATUS & HEALTH**\n"
+            "━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            "🟢 **State:** Online & Listening\n"
+            f"⏱️ **Uptime:** `{elapsed // 60}m {elapsed % 60}s` / `{MAX_RUN_TIME_MINUTES}m`\n"
+            f"📁 **Dropbox Target:** `{DROPBOX_TARGET_FOLDER}`\n"
+            f"📦 **Current Files:** `{file_count}` / `{MAX_FILES_IN_FOLDER}` (Retention cap)\n"
+            "━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            "💡 *Send /stop anytime to shut down the GitHub Action runner.*"
+        )
+        await event.reply(status_msg)
+        return
+
     # Command: /start or /help
     if event.raw_text in ["/start", "/help"]:
         status_label = "Authorized" if is_authorized(user_id) else "Unauthorized"
@@ -253,9 +325,11 @@ async def handle_incoming_message(event):
             f"📦 **Folder Capacity:** Max `{MAX_FILES_IN_FOLDER}` files (Oldest auto-rotated)\n"
             "⚡ **Max Transfer Size:** `2,000 MB (2 GB)`\n"
             "━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-            "📥 **Instructions:**\n"
-            "Send any document, video, application package, audio, or archive. "
-            "The bot will ingest the file, upload it to Dropbox, and return an interactive link card."
+            "📥 **Commands & Usage:**\n"
+            "• Send any document, IPA, video, or archive to sync to Dropbox.\n"
+            "• Tap any monospace code block to copy the URL instantly.\n"
+            "• `/status` - View runner uptime and Dropbox file count.\n"
+            "• `/stop` - Instantly stop the GitHub Actions runner."
         )
         await event.reply(help_card)
         return
@@ -333,6 +407,7 @@ async def handle_incoming_message(event):
 
         # Step 3: Dropbox Upload Execution
         loop = asyncio.get_event_loop()
+        upload_start = time.time()
         shared_url, pruned_items = await loop.run_in_executor(
             None,
             execute_dropbox_upload,
@@ -342,6 +417,9 @@ async def handle_incoming_message(event):
             CHUNK_SIZE_MB
         )
         total_duration = time.time() - start_time
+
+        # Cache shared link for callback query handler
+        ACTIVE_LINKS_CACHE[status_msg.id] = shared_url
 
         # Step 4: Final Presentation Card
         completion_card = (
@@ -357,20 +435,19 @@ async def handle_incoming_message(event):
             pruned_str = ", ".join([f"`{name}`" for name in pruned_items])
             completion_card += f"\n🗑️ **Retention (Max {MAX_FILES_IN_FOLDER}):** Rotated out {pruned_str}\n"
 
-        # Interactive Button Layout
         buttons = []
         if shared_url:
-            completion_card += f"\n🔗 **Access Link:** (Tap to copy)\n`{shared_url}`"
-            action_row = []
+            # Format link inside a dedicated preformatted block.
+            # Telegram automatically renders a native "Copy" icon on this block across mobile & desktop!
+            completion_card += (
+                "\n📋 **Direct Link:** (Tap block to copy)\n"
+                f"```{shared_url}```"
+            )
 
-            # Button 1: Native Clipboard Copy
-            if hasattr(types, "KeyboardButtonCopy"):
-                action_row.append(types.KeyboardButtonCopy(text="📋 Copy Link", copy_text=shared_url))
-            else:
-                action_row.append(Button.url("📋 Copy Link", shared_url))
-
-            # Button 2: Direct Browser Launch
-            action_row.append(Button.url("🌐 Open in Dropbox", shared_url))
+            action_row = [
+                Button.inline("📋 Copy Link", data=b"copy_link"),
+                Button.url("🌐 Open in Dropbox", shared_url)
+            ]
             buttons.append(action_row)
         else:
             completion_card += "\nℹ️ *Payload secured in Dropbox.*"
@@ -401,28 +478,52 @@ async def handle_incoming_message(event):
                 pass
 
 # ---------------------------------------------------------------------------
-# Runner Entrypoint with Graceful GitHub Actions Timeout
+# Runner Entrypoint with Fast Signal Handlers and Timeout
 # ---------------------------------------------------------------------------
 async def run_daemon():
-    """Starts the client daemon with an automated shutdown timer for CI runners."""
+    """Starts the client daemon with fast signal handling and CI timeouts."""
+    loop = asyncio.get_running_loop()
+
+    def instant_signal_exit():
+        logger.info("Signal received (SIGTERM/SIGINT). Initiating immediate disconnect...")
+        shutdown_event.set()
+        asyncio.create_task(client.disconnect())
+
+    for sig in (signal.SIGINT, signal.SIGTERM):
+        try:
+            loop.add_signal_handler(sig, instant_signal_exit)
+        except (NotImplementedError, RuntimeError):
+            pass
+
     await client.start(bot_token=TELEGRAM_BOT_TOKEN)
     me = await client.get_me()
     logger.info("=" * 60)
     logger.info(f"TELEGRAM ➔ DROPBOX SYNC ACTIVE (@{me.username})")
     logger.info(f"Target Directory: {DROPBOX_TARGET_FOLDER} (Retention: {MAX_FILES_IN_FOLDER} files)")
-    logger.info(f"Job Lifetime: {MAX_RUN_TIME_MINUTES} minutes (Auto-cycling)")
+    logger.info(f"Session Window: {MAX_RUN_TIME_MINUTES} minutes")
+    logger.info("Send /stop in Telegram or Cancel in GitHub Actions anytime to stop.")
     logger.info("=" * 60)
 
-    async def execution_lifecycle_guard():
-        await asyncio.sleep(MAX_RUN_TIME_MINUTES * 60)
-        logger.info(f"Execution window reached ({MAX_RUN_TIME_MINUTES} min). Gracefully cycling runner...")
-        await client.disconnect()
+    async def lifecycle_timeout():
+        try:
+            await asyncio.wait_for(shutdown_event.wait(), timeout=MAX_RUN_TIME_MINUTES * 60)
+        except asyncio.TimeoutError:
+            logger.info(f"Execution window reached ({MAX_RUN_TIME_MINUTES} min). Cycling runner...")
+            await client.disconnect()
 
-    asyncio.create_task(execution_lifecycle_guard())
-    await client.run_until_disconnected()
+    timeout_task = asyncio.create_task(lifecycle_timeout())
+
+    try:
+        await client.run_until_disconnected()
+    finally:
+        timeout_task.cancel()
+        logger.info("Sync service stopped cleanly.")
 
 if __name__ == "__main__":
     try:
         asyncio.run(run_daemon())
     except (KeyboardInterrupt, SystemExit):
-        logger.info("Sync service terminated cleanly.")
+        pass
+    except Exception as e:
+        logger.error(f"Terminated with error: {e}")
+    sys.exit(0)
