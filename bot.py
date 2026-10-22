@@ -7,7 +7,7 @@ import tempfile
 from telethon import TelegramClient, events
 import dropbox
 from dropbox.files import WriteMode, CommitInfo
-from dropbox.exceptions import ApiError, AuthError
+from dropbox.exceptions import ApiError, AuthError, BadInputError, DropboxException
 
 # Configure logging
 logging.basicConfig(
@@ -110,16 +110,25 @@ def upload_file_to_dropbox(local_file_path: str, dropbox_dest_path: str, chunk_s
                     dbx.files_upload_session_append_v2(f.read(chunk_size), cursor)
                     cursor.offset = f.tell()
 
-    # Generate or retrieve a shared link
+    logger.info(f"File successfully written to Dropbox: {dropbox_dest_path}")
+
+    # Generate or retrieve a shared link safely
     try:
         shared_link_metadata = dbx.sharing_create_shared_link_with_settings(dropbox_dest_path)
         return shared_link_metadata.url
     except ApiError as err:
         if err.error.is_shared_link_already_exists():
-            links = dbx.sharing_list_shared_links(path=dropbox_dest_path, direct_only=True).links
-            if links:
-                return links[0].url
-        logger.warning(f"Could not generate shared link: {err}")
+            try:
+                links = dbx.sharing_list_shared_links(path=dropbox_dest_path, direct_only=True).links
+                if links:
+                    return links[0].url
+            except Exception:
+                pass
+        logger.warning(f"Could not generate shared link (ApiError): {err}")
+        return ""
+    except (BadInputError, DropboxException, Exception) as err:
+        # Prevents failure when the app lacks 'sharing.write' scope
+        logger.warning(f"Shared link skipped (missing 'sharing.write' scope or error): {err}")
         return ""
 
 # Initialize Telethon Client with Bot Token
@@ -220,6 +229,8 @@ async def message_handler(event):
         )
         if shared_url:
             reply_text += f"\n🔗 [Open in Dropbox]({shared_url})"
+        else:
+            reply_text += "\nℹ️ *Saved to Dropbox.*"
 
         await status_msg.edit(reply_text, link_preview=False)
         logger.info(f"Successfully processed: {filename} ({formatted_size})")
