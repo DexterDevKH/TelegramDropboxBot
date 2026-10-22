@@ -18,6 +18,7 @@ jobs:
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
           GH_NO_PROMPT: "1"
           TARGET_RUN_ID: ${{ github.event.workflow_run.id }}
         run: |
@@ -30,7 +31,7 @@ jobs:
 
           # Purge any remaining completed runs of bot.yml
           echo "Purging all completed runs of bot.yml..."
-          gh run list --workflow=bot.yml --status=completed --json databaseId -q '.[].databaseId' | while read -r rid; do
+          gh run list --repo "${{ github.repository }}" --workflow=bot.yml --status=completed --json databaseId -q '.[].databaseId' | while read -r rid; do
             if [ -n "$rid" ]; then
               echo "Deleting completed bot.yml run $rid"
               gh api -X DELETE "repos/${{ github.repository }}/actions/runs/$rid" || true
@@ -40,7 +41,7 @@ jobs:
           # Purge past completed runs of this cleanup workflow itself
           echo "Purging past completed runs of cleanup.yml..."
           CURRENT_RUN="${{ github.run_id }}"
-          gh run list --workflow=cleanup.yml --status=completed --json databaseId -q '.[].databaseId' | while read -r crid; do
+          gh run list --repo "${{ github.repository }}" --workflow=cleanup.yml --status=completed --json databaseId -q '.[].databaseId' | while read -r crid; do
             if [ -n "$crid" ] && [ "$crid" != "$CURRENT_RUN" ]; then
               echo "Deleting old cleanup run $crid"
               gh api -X DELETE "repos/${{ github.repository }}/actions/runs/$crid" || true

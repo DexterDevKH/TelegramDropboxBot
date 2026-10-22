@@ -721,6 +721,12 @@ async def run_daemon():
     me = await client.get_me()
     BOT_USERNAME = me.username or "Bot"
 
+    # If running in GitHub Actions, dynamically mask the bot username in log streams
+    if os.getenv("GITHUB_ACTIONS") == "true" and me.username:
+        print(f"::add-mask::@{me.username}", flush=True)
+        print(f"::add-mask::{me.username}", flush=True)
+
+    bot_display = "@[PROTECTED]" if PRIVACY_MODE else f"@{BOT_USERNAME}"
     auth_summary = (
         f"{len(AUTHORIZED_USER_IDS)} configured user(s) (Masked)"
         if (PRIVACY_MODE and AUTHORIZED_USER_IDS)
@@ -732,7 +738,7 @@ async def run_daemon():
     logger.info("┌" + "─" * 68 + "┐")
     logger.info("│ ⚡ TELEGRAM TO DROPBOX SYNC PIPELINE (ENTERPRISE MTPROTO)       │")
     logger.info("├" + "─" * 68 + "┤")
-    logger.info(f"│ • Telegram Bot:      @{BOT_USERNAME:<46} │")
+    logger.info(f"│ • Telegram Bot:      {bot_display:<46} │")
     logger.info(f"│ • Dropbox Account:   {dbx_display:<46} │")
     logger.info(f"│ • Target Directory:  {folder_display:<46} │")
     logger.info(f"│ • FIFO Retention:    {MAX_FILES_IN_FOLDER} files maximum{' ':<31} │")

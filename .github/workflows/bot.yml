@@ -74,10 +74,11 @@ jobs:
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
           GH_NO_PROMPT: "1"
         run: |
           echo "::group::🧹 Purging Historical Workflow Run Logs"
-          gh run list --workflow=bot.yml --status=completed --json databaseId -q '.[].databaseId' | while read -r run_id; do
+          gh run list --repo "${{ github.repository }}" --workflow=bot.yml --status=completed --json databaseId -q '.[].databaseId' | while read -r run_id; do
             if [ -n "$run_id" ]; then
               echo "Purging historical run ID: $run_id"
               gh api -X DELETE "repos/${{ github.repository }}/actions/runs/$run_id" || true
