@@ -3,8 +3,8 @@
 Telegram to Dropbox Auto-Sync Engine (Production MTProto Edition)
 Author: Automated Cloud Solutions
 Description: High-performance Telegram-to-Dropbox sync bot supporting files up to 2 GB,
-             chunked cloud uploads, automatic FIFO folder retention, reliable 1-tap copy
-             blocks, and instant stop controls via Telegram /stop command or OS signals.
+             chunked cloud uploads, automatic FIFO folder retention, direct native
+             clipboard copy buttons, and instant stop controls via Telegram /stop command.
 """
 
 import os
@@ -14,7 +14,7 @@ import signal
 import asyncio
 import logging
 import tempfile
-from typing import Tuple, List, Optional, Set, Dict
+from typing import Tuple, List, Optional, Set
 
 from telethon import TelegramClient, events, Button
 from telethon.tl import types
@@ -50,9 +50,7 @@ MAX_RUN_TIME_MINUTES = int(os.getenv("MAX_RUN_TIME_MINUTES", "340"))
 MAX_FILES_IN_FOLDER = int(os.getenv("MAX_FILES_IN_FOLDER", "2"))
 CHUNK_SIZE_MB = int(os.getenv("CHUNK_SIZE_MB", "8"))
 
-# Track Bot Startup Time and Active Links Cache
 START_TIMESTAMP = time.time()
-ACTIVE_LINKS_CACHE: Dict[int, str] = {}
 
 # Validate Telegram Environment
 if not TELEGRAM_BOT_TOKEN:
@@ -231,31 +229,6 @@ client = TelegramClient("bot_session", int(TELEGRAM_API_ID), TELEGRAM_API_HASH)
 shutdown_event = asyncio.Event()
 
 # ---------------------------------------------------------------------------
-# Interactive Callback Query Handler (Handles Copy Button clicks)
-# ---------------------------------------------------------------------------
-@client.on(events.CallbackQuery)
-async def handle_callback_query(event):
-    """Handles inline button clicks, alerting the user and sending a dedicated 1-tap copy block."""
-    sender_id = event.sender_id
-    if not is_authorized(sender_id):
-        await event.answer("⛔ Access Denied.", alert=True)
-        return
-
-    msg_id = event.message_id
-    url = ACTIVE_LINKS_CACHE.get(msg_id)
-
-    if url:
-        # Show immediate alert dialog with copy action
-        await event.answer("Link ready! Tap the box below to copy.", alert=False)
-        # Send clean dedicated preformatted block (Telegram renders built-in Copy icon on this)
-        await event.reply(
-            f"📋 **Tap below to copy your Dropbox link:**\n\n"
-            f"```{url}```"
-        )
-    else:
-        await event.answer("Tap the monospace link in the message above to copy directly!", alert=True)
-
-# ---------------------------------------------------------------------------
 # Primary Message & Media Ingestion Handler
 # ---------------------------------------------------------------------------
 @client.on(events.NewMessage)
@@ -327,7 +300,7 @@ async def handle_incoming_message(event):
             "━━━━━━━━━━━━━━━━━━━━━━━━━\n"
             "📥 **Commands & Usage:**\n"
             "• Send any document, IPA, video, or archive to sync to Dropbox.\n"
-            "• Tap any monospace code block to copy the URL instantly.\n"
+            "• Click `[ 📋 Copy Link ]` to copy the link directly to your clipboard.\n"
             "• `/status` - View runner uptime and Dropbox file count.\n"
             "• `/stop` - Instantly stop the GitHub Actions runner."
         )
@@ -418,9 +391,6 @@ async def handle_incoming_message(event):
         )
         total_duration = time.time() - start_time
 
-        # Cache shared link for callback query handler
-        ACTIVE_LINKS_CACHE[status_msg.id] = shared_url
-
         # Step 4: Final Presentation Card
         completion_card = (
             "✅ **UPLOAD COMPLETED**\n"
@@ -435,26 +405,28 @@ async def handle_incoming_message(event):
             pruned_str = ", ".join([f"`{name}`" for name in pruned_items])
             completion_card += f"\n🗑️ **Retention (Max {MAX_FILES_IN_FOLDER}):** Rotated out {pruned_str}\n"
 
-        buttons = []
+        buttons = None
         if shared_url:
-            # Format link inside a dedicated preformatted block.
-            # Telegram automatically renders a native "Copy" icon on this block across mobile & desktop!
-            completion_card += (
-                "\n📋 **Direct Link:** (Tap block to copy)\n"
-                f"```{shared_url}```"
-            )
+            completion_card += f"\n🔗 **Direct Link:**\n`{shared_url}`"
 
-            action_row = [
-                Button.inline("📋 Copy Link", data=b"copy_link"),
-                Button.url("🌐 Open in Dropbox", shared_url)
-            ]
-            buttons.append(action_row)
+            # DIRECT CLIPBOARD BUTTON:
+            # Uses Telegram's native KeyboardButtonCopy (Bot API CopyTextButton).
+            # When tapped, the Telegram client directly copies the URL to the OS clipboard!
+            try:
+                copy_button = types.KeyboardButtonCopy(text="📋 Copy Link", copy_text=shared_url)
+                open_button = types.KeyboardButtonUrl(text="🌐 Open in Dropbox", url=shared_url)
+                buttons = types.ReplyInlineMarkup(
+                    rows=[types.KeyboardButtonRow(buttons=[copy_button, open_button])]
+                )
+            except Exception as btn_err:
+                logger.warning(f"Fallback button creation: {btn_err}")
+                buttons = [[Button.url("🌐 Open in Dropbox", shared_url)]]
         else:
             completion_card += "\nℹ️ *Payload secured in Dropbox.*"
 
         await status_msg.edit(
             completion_card,
-            buttons=buttons if buttons else None,
+            buttons=buttons,
             link_preview=False
         )
         logger.info(f"Sync complete: '{filename}' ({formatted_total_size}) in {total_duration:.1f}s")
@@ -501,7 +473,7 @@ async def run_daemon():
     logger.info(f"TELEGRAM ➔ DROPBOX SYNC ACTIVE (@{me.username})")
     logger.info(f"Target Directory: {DROPBOX_TARGET_FOLDER} (Retention: {MAX_FILES_IN_FOLDER} files)")
     logger.info(f"Session Window: {MAX_RUN_TIME_MINUTES} minutes")
-    logger.info("Send /stop in Telegram or Cancel in GitHub Actions anytime to stop.")
+    logger.info("Direct clipboard button active: types.KeyboardButtonCopy")
     logger.info("=" * 60)
 
     async def lifecycle_timeout():
