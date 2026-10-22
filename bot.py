@@ -445,11 +445,6 @@ async def handle_incoming_message(event):
             completion_card += f"\n🗑️ **Retention (Max {MAX_FILES_IN_FOLDER}):** Rotated out {pruned_str}\n"
 
         if shared_url:
-            completion_card += (
-                "\n🔗 **Direct Link:**\n"
-                f"```{shared_url}```"
-            )
-
             # Edit text first with base Open in Dropbox button
             await status_msg.edit(
                 completion_card,
