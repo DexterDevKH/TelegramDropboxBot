@@ -1,23 +1,38 @@
+#!/usr/bin/env python3
+"""
+Telegram to Dropbox Auto-Sync Engine (Production MTProto Edition)
+Author: Automated Cloud Solutions
+Description: High-performance Telegram-to-Dropbox sync bot supporting files up to 2 GB,
+             chunked cloud uploads, automatic FIFO folder retention, and native clipboard actions.
+"""
+
 import os
 import sys
 import time
 import asyncio
 import logging
 import tempfile
+from typing import Tuple, List, Optional, Set
+
 from telethon import TelegramClient, events, Button
 from telethon.tl import types
 import dropbox
-from dropbox.files import WriteMode, CommitInfo
+from dropbox.files import WriteMode, CommitInfo, FileMetadata
 from dropbox.exceptions import ApiError, AuthError, BadInputError, DropboxException
 
-# Configure logging
+# ---------------------------------------------------------------------------
+# Logging Configuration
+# ---------------------------------------------------------------------------
 logging.basicConfig(
-    format="%(asctime)s - [%(levelname)s] - %(message)s",
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
     level=logging.INFO
 )
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("TelegramDropboxSync")
 
-# Credentials from environment variables
+# ---------------------------------------------------------------------------
+# Configuration & Credentials
+# ---------------------------------------------------------------------------
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 TELEGRAM_API_ID = os.getenv("TELEGRAM_API_ID")
 TELEGRAM_API_HASH = os.getenv("TELEGRAM_API_HASH")
@@ -27,295 +42,387 @@ DROPBOX_APP_SECRET = os.getenv("DROPBOX_APP_SECRET")
 DROPBOX_REFRESH_TOKEN = os.getenv("DROPBOX_REFRESH_TOKEN")
 DROPBOX_ACCESS_TOKEN = os.getenv("DROPBOX_ACCESS_TOKEN")
 DROPBOX_TARGET_FOLDER = os.getenv("DROPBOX_TARGET_FOLDER", "/Telegram_Uploads").strip()
+
 AUTHORIZED_USER_IDS_RAW = os.getenv("AUTHORIZED_USER_IDS", "").strip()
 MAX_RUN_TIME_MINUTES = int(os.getenv("MAX_RUN_TIME_MINUTES", "340"))
-MAX_FILES_IN_FOLDER = int(os.getenv("MAX_FILES_IN_FOLDER", "2"))  # Keep only 2 files
+MAX_FILES_IN_FOLDER = int(os.getenv("MAX_FILES_IN_FOLDER", "2"))
+CHUNK_SIZE_MB = int(os.getenv("CHUNK_SIZE_MB", "8"))
 
-# Validate Telegram credentials
+# Validate Telegram Environment
 if not TELEGRAM_BOT_TOKEN:
-    logger.error("Missing TELEGRAM_BOT_TOKEN.")
+    logger.critical("Configuration Error: Missing TELEGRAM_BOT_TOKEN.")
     sys.exit(1)
 
 if not TELEGRAM_API_ID or not TELEGRAM_API_HASH:
-    logger.error("Missing TELEGRAM_API_ID or TELEGRAM_API_HASH. Get them at https://my.telegram.org")
+    logger.critical("Configuration Error: Missing TELEGRAM_API_ID or TELEGRAM_API_HASH (Get from https://my.telegram.org).")
     sys.exit(1)
 
-# Validate Dropbox credentials
+# Validate Dropbox Environment
 if not ((DROPBOX_APP_KEY and DROPBOX_APP_SECRET and DROPBOX_REFRESH_TOKEN) or DROPBOX_ACCESS_TOKEN):
-    logger.error("Missing Dropbox credentials (App Key, App Secret, and Refresh Token).")
+    logger.critical("Configuration Error: Missing Dropbox OAuth credentials (Key, Secret, and Refresh Token).")
     sys.exit(1)
 
-# Parse authorized user IDs
-AUTHORIZED_USER_IDS = set()
-if AUTHORIZED_USER_IDS_RAW:
-    for uid in AUTHORIZED_USER_IDS_RAW.split(","):
-        uid = uid.strip()
-        if uid.isdigit():
-            AUTHORIZED_USER_IDS.add(int(uid))
-
-# Ensure target folder starts with '/'
+# Ensure Folder Syntax
 if not DROPBOX_TARGET_FOLDER.startswith("/"):
     DROPBOX_TARGET_FOLDER = "/" + DROPBOX_TARGET_FOLDER
 
-# Initialize Dropbox client
-def get_dropbox_client():
+# Parse Authorized Users
+AUTHORIZED_USER_IDS: Set[int] = set()
+if AUTHORIZED_USER_IDS_RAW:
+    for item in AUTHORIZED_USER_IDS_RAW.split(","):
+        item = item.strip()
+        if item.isdigit():
+            AUTHORIZED_USER_IDS.add(int(item))
+
+# ---------------------------------------------------------------------------
+# Dropbox Client Factory
+# ---------------------------------------------------------------------------
+def init_dropbox() -> dropbox.Dropbox:
+    """Initializes and verifies the Dropbox connection."""
     if DROPBOX_REFRESH_TOKEN and DROPBOX_APP_KEY and DROPBOX_APP_SECRET:
-        return dropbox.Dropbox(
+        client = dropbox.Dropbox(
             app_key=DROPBOX_APP_KEY,
             app_secret=DROPBOX_APP_SECRET,
             oauth2_refresh_token=DROPBOX_REFRESH_TOKEN
         )
-    return dropbox.Dropbox(DROPBOX_ACCESS_TOKEN)
+    else:
+        client = dropbox.Dropbox(DROPBOX_ACCESS_TOKEN)
 
-try:
-    dbx = get_dropbox_client()
-    account_info = dbx.users_get_current_account()
-    logger.info(f"Connected to Dropbox: {account_info.name.display_name} ({account_info.email})")
-except Exception as e:
-    logger.error(f"Failed to authenticate with Dropbox: {e}")
-    sys.exit(1)
+    try:
+        acc = client.users_get_current_account()
+        logger.info(f"Authenticated Dropbox Account: {acc.name.display_name} ({acc.email})")
+        return client
+    except Exception as exc:
+        logger.critical(f"Dropbox Authentication Failure: {exc}")
+        sys.exit(1)
 
-# Helper function to check user authorization
+dbx = init_dropbox()
+
+# ---------------------------------------------------------------------------
+# Utility Functions
+# ---------------------------------------------------------------------------
 def is_authorized(user_id: int) -> bool:
+    """Validates if user ID has permission to invoke bot actions."""
     if not AUTHORIZED_USER_IDS:
         return True
     return user_id in AUTHORIZED_USER_IDS
 
-# Format bytes to human-readable size
 def format_size(size_bytes: int) -> str:
+    """Converts raw byte counts into human-readable formatted strings."""
     for unit in ["B", "KB", "MB", "GB"]:
         if size_bytes < 1024.0:
             return f"{size_bytes:.2f} {unit}"
         size_bytes /= 1024.0
     return f"{size_bytes:.2f} TB"
 
-# Enforce maximum file limit by deleting oldest files
-def cleanup_old_files(folder_path: str, max_files: int = 2) -> list:
+def render_progress_bar(percent: float, bar_length: int = 12) -> str:
+    """Renders a clean visual block progress bar."""
+    filled = int(round(bar_length * (percent / 100.0)))
+    filled = max(0, min(bar_length, filled))
+    bar = "█" * filled + "░" * (bar_length - filled)
+    return f"[{bar}] {percent:.1f}%"
+
+# ---------------------------------------------------------------------------
+# Dropbox Operations: Upload, Retention & Shared Links
+# ---------------------------------------------------------------------------
+def enforce_folder_retention(folder_path: str, max_files: int = 2) -> List[str]:
+    """
+    Enforces FIFO file retention on the target Dropbox directory.
+    If file count exceeds max_files, deletes the oldest files by server modification time.
+    """
     deleted_files = []
     try:
-        files = []
+        files: List[FileMetadata] = []
         result = dbx.files_list_folder(folder_path)
         while True:
             for entry in result.entries:
-                if isinstance(entry, dropbox.files.FileMetadata):
+                if isinstance(entry, FileMetadata):
                     files.append(entry)
             if not result.has_more:
                 break
             result = dbx.files_list_folder_continue(result.cursor)
 
         if len(files) > max_files:
-            # Sort files by server_modified ascending (oldest first)
-            files.sort(key=lambda x: x.server_modified)
-            num_to_delete = len(files) - max_files
-            for old_file in files[:num_to_delete]:
+            # Sort chronologically by server_modified ascending (oldest first)
+            files.sort(key=lambda item: item.server_modified)
+            overflow_count = len(files) - max_files
+            for old_file in files[:overflow_count]:
                 try:
                     dbx.files_delete_v2(old_file.path_lower)
                     deleted_files.append(old_file.name)
-                    logger.info(f"Auto-cleaned oldest file from Dropbox: {old_file.name} ({old_file.server_modified})")
+                    logger.info(f"Retention Policy: Pruned oldest file '{old_file.name}' from {folder_path}")
                 except Exception as del_err:
-                    logger.error(f"Failed to delete old file {old_file.name}: {del_err}")
+                    logger.error(f"Failed to prune '{old_file.name}': {del_err}")
 
-    except ApiError as e:
-        # Folder might not exist yet if this is the very first file
-        logger.warning(f"Folder listing skipped for cleanup ({folder_path}): {e}")
-    except Exception as e:
-        logger.error(f"Error during folder cleanup: {e}")
+    except ApiError as api_err:
+        logger.warning(f"Retention scan skipped for '{folder_path}': {api_err}")
+    except Exception as exc:
+        logger.error(f"Unexpected error during retention enforcement: {exc}")
 
     return deleted_files
 
-# Chunked upload to Dropbox (supports files up to multiple gigabytes)
-def upload_file_to_dropbox(local_file_path: str, dropbox_dest_path: str, target_folder: str, chunk_size_mb: int = 8):
-    file_size = os.path.getsize(local_file_path)
-    chunk_size = chunk_size_mb * 1024 * 1024
+def execute_dropbox_upload(
+    local_path: str,
+    dest_path: str,
+    target_folder: str,
+    chunk_size_mb: int = 8
+) -> Tuple[str, List[str]]:
+    """
+    Uploads file to Dropbox using streaming chunk sessions for efficiency.
+    Returns (shared_url, deleted_files_list).
+    """
+    file_size = os.path.getsize(local_path)
+    chunk_bytes = chunk_size_mb * 1024 * 1024
 
-    with open(local_file_path, "rb") as f:
-        if file_size <= chunk_size:
-            dbx.files_upload(f.read(), dropbox_dest_path, mode=WriteMode.overwrite)
+    with open(local_path, "rb") as stream:
+        if file_size <= chunk_bytes:
+            dbx.files_upload(stream.read(), dest_path, mode=WriteMode.overwrite)
         else:
-            upload_session_start_result = dbx.files_upload_session_start(f.read(chunk_size))
+            session_start = dbx.files_upload_session_start(stream.read(chunk_bytes))
             cursor = dropbox.files.UploadSessionCursor(
-                session_id=upload_session_start_result.session_id,
-                offset=f.tell()
+                session_id=session_start.session_id,
+                offset=stream.tell()
             )
-            commit = CommitInfo(path=dropbox_dest_path, mode=WriteMode.overwrite)
+            commit = CommitInfo(path=dest_path, mode=WriteMode.overwrite)
 
-            while f.tell() < file_size:
-                if (file_size - f.tell()) <= chunk_size:
-                    dbx.files_upload_session_finish(f.read(chunk_size), cursor, commit)
+            while stream.tell() < file_size:
+                remaining = file_size - stream.tell()
+                if remaining <= chunk_bytes:
+                    dbx.files_upload_session_finish(stream.read(chunk_bytes), cursor, commit)
                 else:
-                    dbx.files_upload_session_append_v2(f.read(chunk_size), cursor)
-                    cursor.offset = f.tell()
+                    dbx.files_upload_session_append_v2(stream.read(chunk_bytes), cursor)
+                    cursor.offset = stream.tell()
 
-    logger.info(f"File successfully written to Dropbox: {dropbox_dest_path}")
+    logger.info(f"Successfully committed file to Dropbox: {dest_path}")
 
-    # Enforce folder file limit (keep only 2 files, delete oldest)
-    deleted_files = cleanup_old_files(target_folder, max_files=MAX_FILES_IN_FOLDER)
+    # Enforce retention policy (keep only the newest N files)
+    pruned_files = enforce_folder_retention(target_folder, max_files=MAX_FILES_IN_FOLDER)
 
-    # Generate or retrieve a shared link safely
-    shared_url = ""
+    # Generate or fetch existing shared link safely
+    shared_link = ""
     try:
-        shared_link_metadata = dbx.sharing_create_shared_link_with_settings(dropbox_dest_path)
-        shared_url = shared_link_metadata.url
+        metadata = dbx.sharing_create_shared_link_with_settings(dest_path)
+        shared_link = metadata.url
     except ApiError as err:
         if err.error.is_shared_link_already_exists():
             try:
-                links = dbx.sharing_list_shared_links(path=dropbox_dest_path, direct_only=True).links
-                if links:
-                    shared_url = links[0].url
+                existing = dbx.sharing_list_shared_links(path=dest_path, direct_only=True).links
+                if existing:
+                    shared_link = existing[0].url
             except Exception:
                 pass
-        logger.warning(f"Could not generate shared link (ApiError): {err}")
-    except (BadInputError, DropboxException, Exception) as err:
-        # Prevents failure when the app lacks 'sharing.write' scope
-        logger.warning(f"Shared link skipped (missing 'sharing.write' scope or error): {err}")
+        else:
+            logger.warning(f"Shared link generation failed (ApiError): {err}")
+    except (BadInputError, DropboxException, Exception) as exc:
+        logger.warning(f"Shared link generation skipped (scope or permission limit): {exc}")
 
-    return shared_url, deleted_files
+    return shared_link, pruned_files
 
-# Initialize Telethon Client with Bot Token
+# ---------------------------------------------------------------------------
+# Telethon Client Initialization
+# ---------------------------------------------------------------------------
 client = TelegramClient("bot_session", int(TELEGRAM_API_ID), TELEGRAM_API_HASH)
 
 @client.on(events.NewMessage)
-async def message_handler(event):
+async def handle_incoming_message(event):
+    """Primary handler for direct messages and media ingestion."""
     if not event.is_private:
         return
 
     sender = await event.get_sender()
     user_id = sender.id if sender else 0
 
+    # Authorization Check
     if not is_authorized(user_id):
         await event.reply(
-            f"⛔ **Access Denied**: You are not authorized to use this bot.\n"
-            f"Your Telegram ID: `{user_id}`"
+            "⛔ **Access Denied**\n"
+            "━━━━━━━━━━━━━━━━━━\n"
+            "You are not authorized to use this sync service.\n"
+            f"👤 **Your Telegram ID:** `{user_id}`"
         )
         return
 
-    # Handle /start or /help commands
+    # Command: /start or /help
     if event.raw_text in ["/start", "/help"]:
-        auth_status = "✅ Authorized" if is_authorized(user_id) else "⛔ Not Authorized"
-        welcome_text = (
-            "👋 **Welcome to Telegram ➔ Dropbox Sync Bot (2 GB MTProto Edition)!**\n\n"
-            f"👤 **Your Telegram ID:** `{user_id}`\n"
-            f"🔒 **Access Status:** {auth_status}\n"
-            f"📁 **Dropbox Destination:** `{DROPBOX_TARGET_FOLDER}`\n"
-            f"📦 **Folder Retention:** Max `{MAX_FILES_IN_FOLDER}` files (oldest auto-deleted)\n"
-            "⚡ **Max File Size:** `2,000 MB (2 GB)`\n\n"
-            "📥 **How to use:**\n"
-            "Send or forward any file, video, image, document, or audio to this bot. "
-            "It will automatically download it without the 20MB limit and upload it directly to Dropbox!"
+        status_label = "Authorized" if is_authorized(user_id) else "Unauthorized"
+        help_card = (
+            "🚀 **Cloud Sync Bot (Enterprise MTProto)**\n"
+            "━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            f"👤 **User ID:** `{user_id}` ({status_label})\n"
+            f"📁 **Destination:** `{DROPBOX_TARGET_FOLDER}`\n"
+            f"📦 **Folder Capacity:** Max `{MAX_FILES_IN_FOLDER}` files (Oldest auto-rotated)\n"
+            "⚡ **Max Transfer Size:** `2,000 MB (2 GB)`\n"
+            "━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            "📥 **Instructions:**\n"
+            "Send any document, video, application package, audio, or archive. "
+            "The bot will ingest the file, upload it to Dropbox, and return an interactive link card."
         )
-        await event.reply(welcome_text)
+        await event.reply(help_card)
         return
 
-    # Check if message contains downloadable media
+    # Check for Media
     if not event.message.media:
         return
 
-    # Extract file details
+    # Extract Metadata
     file_size = event.message.file.size if event.message.file else 0
-    filename = event.message.file.name if event.message.file and event.message.file.name else f"telegram_file_{event.message.id}.bin"
-    formatted_size = format_size(file_size)
-
-    status_msg = await event.reply(
-        f"⏳ **Starting download from Telegram...**\n"
-        f"📄 `{filename}` ({formatted_size})"
+    filename = (
+        event.message.file.name
+        if event.message.file and event.message.file.name
+        else f"telegram_payload_{event.message.id}.bin"
     )
+    formatted_total_size = format_size(file_size)
+
+    # Initial Dispatch Message
+    status_card = (
+        "⏳ **INGESTING MEDIA STREAM**\n"
+        "━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+        f"📄 **File:** `{filename}`\n"
+        f"📦 **Size:** `{formatted_total_size}`\n"
+        "🔄 **Status:** Initializing MTProto download..."
+    )
+    status_msg = await event.reply(status_card)
 
     tmp_dir = tempfile.gettempdir()
-    local_path = os.path.join(tmp_dir, f"{int(time.time())}_{filename}")
+    local_target = os.path.join(tmp_dir, f"{int(time.time())}_{filename}")
 
-    last_edit = [0]
+    last_update_ts = [0.0]
+    start_time = time.time()
 
-    async def download_progress(current, total):
-        # Throttle progress updates to avoid Telegram rate limits
+    async def progress_hook(current_bytes: int, total_bytes: int):
+        """Throttled progress updater to maintain responsive UI while avoiding FloodWait."""
         now = time.time()
-        if now - last_edit[0] > 4:
-            percent = (current / total) * 100 if total > 0 else 0
+        if now - last_update_ts[0] > 3.5:
+            pct = (current_bytes / total_bytes) * 100.0 if total_bytes > 0 else 0.0
+            elapsed = now - start_time
+            speed = current_bytes / elapsed if elapsed > 0 else 0
+            card = (
+                "📥 **RECEIVING PAYLOAD (Telegram)**\n"
+                "━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+                f"📄 **File:** `{filename}`\n"
+                f"📦 **Volume:** `{format_size(current_bytes)}` / `{formatted_total_size}`\n"
+                f"⚡ **Speed:** `{format_size(int(speed))}/s`\n"
+                f"📊 **Progress:** `{render_progress_bar(pct)}`"
+            )
             try:
-                await status_msg.edit(
-                    f"⏳ **Downloading from Telegram... {percent:.1f}%**\n"
-                    f"📄 `{filename}`\n"
-                    f"📦 `{format_size(current)} / {format_size(total)}`"
-                )
-                last_edit[0] = now
+                await status_msg.edit(card)
+                last_update_ts[0] = now
             except Exception:
                 pass
 
     try:
-        # Download media up to 2GB via MTProto
+        # Step 1: MTProto Download
         await client.download_media(
             event.message,
-            file=local_path,
-            progress_callback=download_progress
+            file=local_target,
+            progress_callback=progress_hook
         )
+        download_duration = time.time() - start_time
+
+        # Step 2: Upload Status Card
+        await status_msg.edit(
+            "☁️ **SYNCHRONIZING WITH DROPBOX**\n"
+            "━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            f"📄 **File:** `{filename}`\n"
+            f"📦 **Size:** `{formatted_total_size}`\n"
+            f"⏱️ **Download Time:** `{download_duration:.1f}s`\n"
+            "🔄 **Status:** Streaming chunked sessions & checking retention..."
+        )
+
+        dropbox_target_path = f"{DROPBOX_TARGET_FOLDER.rstrip('/')}/{filename}"
+
+        # Step 3: Dropbox Upload Execution
+        loop = asyncio.get_event_loop()
+        shared_url, pruned_items = await loop.run_in_executor(
+            None,
+            execute_dropbox_upload,
+            local_target,
+            dropbox_target_path,
+            DROPBOX_TARGET_FOLDER,
+            CHUNK_SIZE_MB
+        )
+        total_duration = time.time() - start_time
+
+        # Step 4: Final Presentation Card
+        completion_card = (
+            "✅ **UPLOAD COMPLETED**\n"
+            "━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            f"📄 **File:** `{filename}`\n"
+            f"📦 **Size:** `{formatted_total_size}`\n"
+            f"📁 **Destination:** `{DROPBOX_TARGET_FOLDER}`\n"
+            f"⏱️ **Total Elapsed:** `{total_duration:.1f}s`\n"
+        )
+
+        if pruned_items:
+            pruned_str = ", ".join([f"`{name}`" for name in pruned_items])
+            completion_card += f"\n🗑️ **Retention (Max {MAX_FILES_IN_FOLDER}):** Rotated out {pruned_str}\n"
+
+        # Interactive Button Layout
+        buttons = []
+        if shared_url:
+            completion_card += f"\n🔗 **Access Link:** (Tap to copy)\n`{shared_url}`"
+            action_row = []
+
+            # Button 1: Native Clipboard Copy
+            if hasattr(types, "KeyboardButtonCopy"):
+                action_row.append(types.KeyboardButtonCopy(text="📋 Copy Link", copy_text=shared_url))
+            else:
+                action_row.append(Button.url("📋 Copy Link", shared_url))
+
+            # Button 2: Direct Browser Launch
+            action_row.append(Button.url("🌐 Open in Dropbox", shared_url))
+            buttons.append(action_row)
+        else:
+            completion_card += "\nℹ️ *Payload secured in Dropbox.*"
 
         await status_msg.edit(
-            f"☁️ **Uploading to Dropbox & verifying file retention...**\n"
-            f"📄 `{filename}` ({formatted_size})"
+            completion_card,
+            buttons=buttons if buttons else None,
+            link_preview=False
         )
+        logger.info(f"Sync complete: '{filename}' ({formatted_total_size}) in {total_duration:.1f}s")
 
-        dropbox_path = f"{DROPBOX_TARGET_FOLDER.rstrip('/')}/{filename}"
-
-        # Execute Dropbox upload and auto-cleanup in thread pool
-        loop = asyncio.get_event_loop()
-        shared_url, deleted_files = await loop.run_in_executor(
-            None, upload_file_to_dropbox, local_path, dropbox_path, DROPBOX_TARGET_FOLDER
+    except Exception as exc:
+        logger.error(f"Pipeline Failure for '{filename}': {exc}", exc_info=True)
+        failure_card = (
+            "❌ **TRANSFER FAILED**\n"
+            "━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            f"📄 **Target:** `{filename}`\n"
+            f"⚠️ **Error Details:** `{str(exc)}`\n"
+            "━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            "Please verify runner credentials and cloud storage quota."
         )
-
-        # Upload complete notification
-        reply_text = (
-            "✅ **Upload Complete!**\n\n"
-            f"📁 **Folder:** `{DROPBOX_TARGET_FOLDER}`\n"
-            f"📄 **File:** `{filename}`\n"
-            f"📦 **Size:** `{formatted_size}`"
-        )
-
-        # Report auto-deleted files if cleanup was triggered
-        if deleted_files:
-            deleted_list_str = ", ".join([f"`{name}`" for name in deleted_files])
-            reply_text += f"\n🗑️ **Auto-cleaned (Max {MAX_FILES_IN_FOLDER} files):** Deleted oldest file {deleted_list_str}"
-
-        buttons = None
-        if shared_url:
-            reply_text += f"\n\n🔗 **Dropbox Link:** (Tap to copy)\n`{shared_url}`"
-            try:
-                # Native Telegram 1-tap Copy Text button (copies directly to clipboard)
-                if hasattr(types, "KeyboardButtonCopy"):
-                    buttons = [[types.KeyboardButtonCopy(text="📋 Copy Link", copy_text=shared_url)]]
-                else:
-                    buttons = [[Button.url("📋 Copy Link", shared_url)]]
-            except Exception:
-                buttons = [[Button.url("📋 Copy Link", shared_url)]]
-        else:
-            reply_text += "\n\nℹ️ *Saved to Dropbox.*"
-
-        await status_msg.edit(reply_text, buttons=buttons, link_preview=False)
-        logger.info(f"Successfully processed: {filename} ({formatted_size})")
-
-    except Exception as e:
-        logger.error(f"Failed processing {filename}: {e}", exc_info=True)
-        await status_msg.edit(f"❌ **Upload Failed**\n\nError: `{str(e)}`")
+        await status_msg.edit(failure_card)
     finally:
-        if os.path.exists(local_path):
+        if os.path.exists(local_target):
             try:
-                os.remove(local_path)
+                os.remove(local_target)
             except Exception:
                 pass
 
-# Graceful runner loop with GitHub Actions timeout
-async def main():
+# ---------------------------------------------------------------------------
+# Runner Entrypoint with Graceful GitHub Actions Timeout
+# ---------------------------------------------------------------------------
+async def run_daemon():
+    """Starts the client daemon with an automated shutdown timer for CI runners."""
     await client.start(bot_token=TELEGRAM_BOT_TOKEN)
     me = await client.get_me()
-    logger.info(f"Bot online as @{me.username} via Telethon MTProto engine.")
-    logger.info(f"Target Dropbox Folder: {DROPBOX_TARGET_FOLDER} (Max files: {MAX_FILES_IN_FOLDER})")
-    logger.info(f"Max execution time: {MAX_RUN_TIME_MINUTES} minutes")
+    logger.info("=" * 60)
+    logger.info(f"TELEGRAM ➔ DROPBOX SYNC ACTIVE (@{me.username})")
+    logger.info(f"Target Directory: {DROPBOX_TARGET_FOLDER} (Retention: {MAX_FILES_IN_FOLDER} files)")
+    logger.info(f"Job Lifetime: {MAX_RUN_TIME_MINUTES} minutes (Auto-cycling)")
+    logger.info("=" * 60)
 
-    async def timeout_guard():
+    async def execution_lifecycle_guard():
         await asyncio.sleep(MAX_RUN_TIME_MINUTES * 60)
-        logger.info("Maximum run duration reached. Gracefully disconnecting...")
+        logger.info(f"Execution window reached ({MAX_RUN_TIME_MINUTES} min). Gracefully cycling runner...")
         await client.disconnect()
 
-    asyncio.create_task(timeout_guard())
+    asyncio.create_task(execution_lifecycle_guard())
     await client.run_until_disconnected()
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    try:
+        asyncio.run(run_daemon())
+    except (KeyboardInterrupt, SystemExit):
+        logger.info("Sync service terminated cleanly.")

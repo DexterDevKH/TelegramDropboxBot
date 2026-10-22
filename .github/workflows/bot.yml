@@ -1,8 +1,9 @@
-name: Telegram to Dropbox Bot Runner (2 GB MTProto)
+name: Telegram to Dropbox Sync Pipeline
 
 on:
   workflow_dispatch:
   schedule:
+    # Cycles runner every 6 hours to maintain 24/7 uptime within CI limits
     - cron: '0 */6 * * *'
   push:
     branches:
@@ -12,30 +13,31 @@ on:
       - '.gitignore'
 
 concurrency:
-  group: telegram-dropbox-sync
+  group: tg-dropbox-sync-daemon
   cancel-in-progress: true
 
 jobs:
-  run-bot:
+  sync-service:
+    name: Run Media Sync Daemon
     runs-on: ubuntu-latest
     timeout-minutes: 355
 
     steps:
-      - name: Checkout Code
+      - name: Checkout Source Code
         uses: actions/checkout@v4
 
-      - name: Set up Python 3.11
+      - name: Initialize Python 3.11 Runtime
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
           cache: 'pip'
 
-      - name: Install Dependencies
+      - name: Install Pinned Dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Run Telegram to Dropbox Bot
+      - name: Launch Sync Engine
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_API_ID: ${{ secrets.TELEGRAM_API_ID }}
@@ -45,6 +47,8 @@ jobs:
           DROPBOX_REFRESH_TOKEN: ${{ secrets.DROPBOX_REFRESH_TOKEN }}
           AUTHORIZED_USER_IDS: ${{ secrets.AUTHORIZED_USER_IDS }}
           DROPBOX_TARGET_FOLDER: ${{ secrets.DROPBOX_TARGET_FOLDER || '/Telegram_Uploads' }}
+          MAX_FILES_IN_FOLDER: ${{ secrets.MAX_FILES_IN_FOLDER || '2' }}
           MAX_RUN_TIME_MINUTES: "340"
+          CHUNK_SIZE_MB: "8"
         run: |
           python bot.py
