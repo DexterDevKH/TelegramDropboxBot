@@ -4,7 +4,7 @@ Telegram to Dropbox Auto-Sync Engine (Production MTProto Edition)
 Author: Automated Cloud Solutions
 Description: High-performance Telegram-to-Dropbox sync bot supporting files up to 2 GB,
              chunked cloud uploads, automatic FIFO folder retention, true 1-press native
-             clipboard copy button (no extra messages), and instant /stop controls.
+             CopyTextButton (direct to clipboard), and instant /stop controls.
 """
 
 import os
@@ -14,6 +14,7 @@ import signal
 import asyncio
 import logging
 import tempfile
+import requests
 from typing import Tuple, List, Optional, Set
 
 from telethon import TelegramClient, events, Button
@@ -126,6 +127,45 @@ def render_progress_bar(percent: float, bar_length: int = 12) -> str:
     bar = "█" * filled + "░" * (bar_length - filled)
     return f"[{bar}] {percent:.1f}%"
 
+def apply_native_copy_buttons(chat_id: int, message_id: int, shared_url: str) -> bool:
+    """
+    Applies Telegram's official client-side CopyTextButton via HTTP Bot API.
+    When tapped, the Telegram app directly copies shared_url into the OS clipboard.
+    No extra messages are sent.
+    """
+    api_endpoint = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/editMessageReplyMarkup"
+    payload = {
+        "chat_id": chat_id,
+        "message_id": message_id,
+        "reply_markup": {
+            "inline_keyboard": [
+                [
+                    {
+                        "text": "📋 Copy Link",
+                        "copy_text": {
+                            "text": shared_url
+                        }
+                    },
+                    {
+                        "text": "🌐 Open in Dropbox",
+                        "url": shared_url
+                    }
+                ]
+            ]
+        }
+    }
+    try:
+        resp = requests.post(api_endpoint, json=payload, timeout=10)
+        if resp.status_code == 200:
+            logger.info("Direct CopyTextButton successfully attached via Telegram Bot API.")
+            return True
+        else:
+            logger.warning(f"Telegram Bot API rejected CopyTextButton ({resp.status_code}): {resp.text}")
+            return False
+    except Exception as exc:
+        logger.error(f"Error calling Telegram Bot API for CopyTextButton: {exc}")
+        return False
+
 # ---------------------------------------------------------------------------
 # Dropbox Operations: Upload, Retention & Shared Links
 # ---------------------------------------------------------------------------
@@ -147,7 +187,6 @@ def enforce_folder_retention(folder_path: str, max_files: int = 2) -> List[str]:
             result = dbx.files_list_folder_continue(result.cursor)
 
         if len(files) > max_files:
-            # Sort chronologically by server_modified ascending (oldest first)
             files.sort(key=lambda item: item.server_modified)
             overflow_count = len(files) - max_files
             for old_file in files[:overflow_count]:
@@ -405,35 +444,39 @@ async def handle_incoming_message(event):
             pruned_str = ", ".join([f"`{name}`" for name in pruned_items])
             completion_card += f"\n🗑️ **Retention (Max {MAX_FILES_IN_FOLDER}):** Rotated out {pruned_str}\n"
 
-        buttons = None
         if shared_url:
             completion_card += (
                 "\n🔗 **Direct Link:**\n"
                 f"```{shared_url}```"
             )
 
-            # TRUE NATIVE CLIENT-SIDE CLIPBOARD COPY:
-            # Using Telegram's official keyboardButtonCopy constructor (Layer 180+ / Bot API 7.3).
-            # When the user clicks this button, the Telegram app itself directly copies `shared_url`
-            # to the device's clipboard and displays "Copied to clipboard". Zero extra messages sent!
-            try:
-                copy_button = types.KeyboardButtonCopy(text="📋 Copy Link", copy_text=shared_url)
-                open_button = types.KeyboardButtonUrl(text="🌐 Open in Dropbox", url=shared_url)
-                buttons = types.ReplyInlineMarkup(
-                    rows=[types.KeyboardButtonRow(buttons=[copy_button, open_button])]
-                )
-            except Exception as e:
-                logger.warning(f"Native copy button error: {e}")
-                # Fallback to direct URL button if client schema is outdated
-                buttons = [[Button.url("🌐 Open in Dropbox", shared_url)]]
+            # Edit text first with base Open in Dropbox button
+            await status_msg.edit(
+                completion_card,
+                buttons=[[Button.url("🌐 Open in Dropbox", shared_url)]],
+                link_preview=False
+            )
+
+            # Attach official client-side CopyTextButton via Telegram Bot API
+            # This directly attaches [ 📋 Copy Link ] next to [ 🌐 Open in Dropbox ]
+            # When pressed, the Telegram client automatically copies the URL to the clipboard!
+            applied = await loop.run_in_executor(
+                None,
+                apply_native_copy_buttons,
+                event.chat_id,
+                status_msg.id,
+                shared_url
+            )
+            if not applied:
+                logger.info("Retained standard URL button fallback.")
         else:
             completion_card += "\nℹ️ *Payload secured in Dropbox.*"
+            await status_msg.edit(
+                completion_card,
+                buttons=None,
+                link_preview=False
+            )
 
-        await status_msg.edit(
-            completion_card,
-            buttons=buttons,
-            link_preview=False
-        )
         logger.info(f"Sync complete: '{filename}' ({formatted_total_size}) in {total_duration:.1f}s")
 
     except Exception as exc:
@@ -478,7 +521,7 @@ async def run_daemon():
     logger.info(f"TELEGRAM ➔ DROPBOX SYNC ACTIVE (@{me.username})")
     logger.info(f"Target Directory: {DROPBOX_TARGET_FOLDER} (Retention: {MAX_FILES_IN_FOLDER} files)")
     logger.info(f"Session Window: {MAX_RUN_TIME_MINUTES} minutes")
-    logger.info("Direct native clipboard button armed (types.KeyboardButtonCopy).")
+    logger.info("Direct CopyTextButton armed via Telegram Bot API.")
     logger.info("=" * 60)
 
     async def lifecycle_timeout():
