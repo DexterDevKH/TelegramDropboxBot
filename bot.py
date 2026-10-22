@@ -61,6 +61,7 @@ AUTHORIZED_USER_IDS_RAW = os.getenv("AUTHORIZED_USER_IDS", "").strip()
 MAX_RUN_TIME_MINUTES = int(os.getenv("MAX_RUN_TIME_MINUTES", "340"))
 MAX_FILES_IN_FOLDER = int(os.getenv("MAX_FILES_IN_FOLDER", "2"))
 CHUNK_SIZE_MB = int(os.getenv("CHUNK_SIZE_MB", "8"))
+PRIVACY_MODE = os.getenv("PRIVACY_MODE", "true").strip().lower() in ("true", "1", "yes")
 
 START_TIMESTAMP = time.time()
 SESSION_TRANSFERS_COUNT = 0
@@ -114,7 +115,18 @@ def init_dropbox() -> dropbox.Dropbox:
         acc = client.users_get_current_account()
         DBX_ACCOUNT_NAME = acc.name.display_name
         DBX_ACCOUNT_EMAIL = acc.email
-        logger.info(f"Authenticated Dropbox Account: {DBX_ACCOUNT_NAME} ({DBX_ACCOUNT_EMAIL})")
+
+        # If running in GitHub Actions, dynamically mask the email and name in log streams
+        if os.getenv("GITHUB_ACTIONS") == "true":
+            if DBX_ACCOUNT_EMAIL:
+                print(f"::add-mask::{DBX_ACCOUNT_EMAIL}", flush=True)
+            if DBX_ACCOUNT_NAME:
+                print(f"::add-mask::{DBX_ACCOUNT_NAME}", flush=True)
+
+        if PRIVACY_MODE:
+            logger.info("Authenticated Dropbox Account: [PROTECTED/MASKED]")
+        else:
+            logger.info(f"Authenticated Dropbox Account: {DBX_ACCOUNT_NAME} ({DBX_ACCOUNT_EMAIL})")
         return client
     except Exception as exc:
         logger.critical(f"Dropbox Authentication Failure: {exc}")
@@ -130,6 +142,26 @@ def is_authorized(user_id: int) -> bool:
     if not AUTHORIZED_USER_IDS:
         return True
     return user_id in AUTHORIZED_USER_IDS
+
+def mask_filename(name: str) -> str:
+    """Masks filename for privacy in runner console logs when PRIVACY_MODE is enabled."""
+    if not PRIVACY_MODE or not name:
+        return name
+    if "." in name:
+        base, ext = name.rsplit(".", 1)
+        if len(base) <= 3:
+            masked_base = "***"
+        else:
+            masked_base = base[:2] + "***" + base[-1]
+        return f"{masked_base}.{ext}"
+    return name[:2] + "***" if len(name) > 2 else "***"
+
+def mask_user_id(user_id: int) -> str:
+    """Masks user ID for privacy in runner console logs when PRIVACY_MODE is enabled."""
+    if not PRIVACY_MODE:
+        return str(user_id)
+    uid_str = str(user_id)
+    return uid_str[:2] + "***" if len(uid_str) > 2 else "***"
 
 def format_size(size_bytes: int) -> str:
     """Converts raw byte counts into clean human-readable formatted strings."""
@@ -240,12 +272,16 @@ def enforce_folder_retention(folder_path: str, max_files: int = 2) -> List[str]:
                 try:
                     dbx.files_delete_v2(old_file.path_lower)
                     deleted_files.append(old_file.name)
-                    logger.info(f"Retention Policy: Pruned oldest file '{old_file.name}' from {folder_path}")
+                    log_file = mask_filename(old_file.name)
+                    log_folder = "[PROTECTED_VAULT]" if PRIVACY_MODE else folder_path
+                    logger.info(f"Retention Policy: Pruned oldest file '{log_file}' from {log_folder}")
                 except Exception as del_err:
-                    logger.error(f"Failed to prune '{old_file.name}': {del_err}")
+                    log_file = mask_filename(old_file.name)
+                    logger.error(f"Failed to prune '{log_file}': {del_err}")
 
     except ApiError as api_err:
-        logger.warning(f"Retention scan skipped for '{folder_path}': {api_err}")
+        log_folder = "[PROTECTED_VAULT]" if PRIVACY_MODE else folder_path
+        logger.warning(f"Retention scan skipped for '{log_folder}': {api_err}")
     except Exception as exc:
         logger.error(f"Unexpected error during retention enforcement: {exc}")
 
@@ -294,7 +330,8 @@ def execute_dropbox_upload(
                     if progress_callback:
                         progress_callback(stream.tell(), file_size)
 
-    logger.info(f"Successfully committed file to Dropbox: {dest_path}")
+    log_dest = f"[PROTECTED_VAULT]/{mask_filename(os.path.basename(dest_path))}" if PRIVACY_MODE else dest_path
+    logger.info(f"Successfully committed file to Dropbox: {log_dest}")
 
     # Enforce retention policy (keep newest N files)
     pruned_files = enforce_folder_retention(target_folder, max_files=MAX_FILES_IN_FOLDER)
@@ -352,7 +389,7 @@ async def handle_incoming_message(event):
             "💡 *To authorize, add your Telegram ID to `AUTHORIZED_USER_IDS` in GitHub Secrets.*"
         )
         await event.reply(denied_card)
-        logger.warning(f"Unauthorized access attempt from user_id: {user_id}")
+        logger.warning(f"Unauthorized access attempt from user_id: {mask_user_id(user_id)}")
         return
 
     # Command: /stop, /shutdown, /kill (Gracefully stops the runner)
@@ -368,7 +405,10 @@ async def handle_incoming_message(event):
             "✅ Daemon disconnecting and terminating GitHub Actions runner with Exit Code 0."
         )
         await event.reply(stop_card)
-        logger.info(f"Stop command received from user {user_id} ({sender_name}). Terminating...")
+        if PRIVACY_MODE:
+            logger.info("Stop command received from authorized user. Terminating...")
+        else:
+            logger.info(f"Stop command received from user {user_id} ({sender_name}). Terminating...")
         shutdown_event.set()
         await client.disconnect()
         return
@@ -637,10 +677,10 @@ async def handle_incoming_message(event):
         # Update Session Metrics
         SESSION_TRANSFERS_COUNT += 1
         SESSION_TRANSFERS_BYTES += file_size
-        logger.info(f"Sync complete: '{filename}' ({formatted_total_size}) in {total_duration:.1f}s")
+        logger.info(f"Sync complete: '{mask_filename(filename)}' ({formatted_total_size}) in {total_duration:.1f}s")
 
     except Exception as exc:
-        logger.error(f"Pipeline Failure for '{filename}': {exc}", exc_info=True)
+        logger.error(f"Pipeline Failure for '{mask_filename(filename)}': {exc}", exc_info=True)
         failure_card = (
             "❌ **TRANSFER FAILED**\n"
             "──────────────────────────────\n"
@@ -682,21 +722,24 @@ async def run_daemon():
     BOT_USERNAME = me.username or "Bot"
 
     auth_summary = (
-        f"{len(AUTHORIZED_USER_IDS)} configured user(s)"
-        if AUTHORIZED_USER_IDS
-        else "Public (All users permitted)"
+        f"{len(AUTHORIZED_USER_IDS)} configured user(s) (Masked)"
+        if (PRIVACY_MODE and AUTHORIZED_USER_IDS)
+        else (f"{len(AUTHORIZED_USER_IDS)} configured user(s)" if AUTHORIZED_USER_IDS else "Public (All users permitted)")
     )
+    dbx_display = "[PROTECTED/MASKED]" if PRIVACY_MODE else DBX_ACCOUNT_NAME
+    folder_display = "[PROTECTED_VAULT]" if PRIVACY_MODE else DROPBOX_TARGET_FOLDER
 
     logger.info("┌" + "─" * 68 + "┐")
     logger.info("│ ⚡ TELEGRAM TO DROPBOX SYNC PIPELINE (ENTERPRISE MTPROTO)       │")
     logger.info("├" + "─" * 68 + "┤")
     logger.info(f"│ • Telegram Bot:      @{BOT_USERNAME:<46} │")
-    logger.info(f"│ • Dropbox Account:   {DBX_ACCOUNT_NAME:<46} │")
-    logger.info(f"│ • Target Directory:  {DROPBOX_TARGET_FOLDER:<46} │")
+    logger.info(f"│ • Dropbox Account:   {dbx_display:<46} │")
+    logger.info(f"│ • Target Directory:  {folder_display:<46} │")
     logger.info(f"│ • FIFO Retention:    {MAX_FILES_IN_FOLDER} files maximum{' ':<31} │")
     logger.info(f"│ • Chunk Streaming:   {CHUNK_SIZE_MB} MB chunks{' ':<34} │")
     logger.info(f"│ • Session Window:    {MAX_RUN_TIME_MINUTES} minutes{' ':<33} │")
     logger.info(f"│ • Access Control:    {auth_summary:<46} │")
+    logger.info(f"│ • Privacy Shield:    {'Active (Masked Logs)' if PRIVACY_MODE else 'Disabled':<46} │")
     logger.info(f"│ • Direct Copy API:   Armed (Telegram Bot API v7.0+){' ':<17} │")
     logger.info("└" + "─" * 68 + "┘")
 

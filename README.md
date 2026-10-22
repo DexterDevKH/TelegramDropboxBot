@@ -18,6 +18,8 @@ An enterprise-grade, high-performance Telegram-to-Dropbox sync pipeline powered 
   - `/stop` — Safely terminates the runner with a clean session summary and Exit Code 0.
   - `/help` — Interactive command manual.
 - **🔒 Access Whitelisting**: Strict authorization filter via `AUTHORIZED_USER_IDS` to restrict usage to approved accounts.
+- **🛡️ Privacy Shield & Log Sanitization**: Automatically masks transferred filenames (`se***t.pdf`), redacts Telegram user IDs, hides Dropbox account names/emails, and masks confidential secrets in GitHub Actions console logs while preserving full details in private Telegram chats.
+- **🧹 Automated Run Log Purging**: Dedicated auto-purge workflow (`cleanup.yml`) automatically deletes completed GitHub Actions workflow runs and their logs immediately upon completion, leaving no historical trace.
 - **🔄 24/7 CI Runner Cycling**: GitHub Actions workflow automatically cycles every 6 hours with singleton concurrency to prevent race conditions.
 
 ---
@@ -70,8 +72,9 @@ Configure the following secrets in **Settings ➔ Secrets and variables ➔ Acti
 | `DROPBOX_APP_SECRET` | **Yes** | Dropbox App Secret from Dropbox App Console |
 | `DROPBOX_REFRESH_TOKEN` | **Yes** | Permanent OAuth 2.0 offline refresh token (generate via `get_refresh_token.py`) |
 | `AUTHORIZED_USER_IDS` | No | Comma-separated Telegram User IDs allowed to use the bot (e.g. `123456,789012`). If empty, public. |
-| `DROPBOX_TARGET_FOLDER` | No | Destination folder path in Dropbox (Default: `/Telegram_Uploads`) |
+| `DROPBOX_TARGET_FOLDER` | No | Destination folder path in Dropbox (Default: `/Telegram Uploads`) |
 | `MAX_FILES_IN_FOLDER` | No | Maximum number of files to retain before pruning oldest (Default: `2`) |
+| `PRIVACY_MODE` | No | Mask filenames, user IDs, and cloud paths in runner logs (Default: `true`) |
 
 ---
 
@@ -87,13 +90,18 @@ Follow the prompts to authorize your app with offline access and paste the gener
 
 ---
 
-## 🚀 GitHub Actions CI Pipeline
+## 🚀 GitHub Actions CI Pipeline & Privacy Protection
 
-The pipeline workflow (`.github/workflows/bot.yml`) features:
-- **Pre-Flight Secrets Audit**: Automatically verifies credentials before starting and provides clear diagnostic notices.
-- **Rich Job Summary**: Generates a deployment dashboard table in `$GITHUB_STEP_SUMMARY`.
-- **Manual Dispatch with Inputs**: Customize execution window, retention cap, and log level on-demand.
-- **Folded Log Groups**: Structured, foldable console logs in GitHub Actions for clean auditing.
+The repository includes two complementary workflows:
+1. **Sync Pipeline (`.github/workflows/bot.yml`)**:
+   - **Privacy Shield & Secret Masking**: Automatically registers `::add-mask::` on all user IDs, API IDs, and folder paths. Filenames are masked in console output (`do***t.pdf`).
+   - **Environment-based Secret Audits**: Verifies credentials securely without exposing secrets directly in bash strings.
+   - **Sanitized Job Summary**: Deployment summary on GitHub renders without exposing sensitive Dropbox vault paths or credentials.
+   - **Pre-Run Historical Purge**: Automatically cleans out old completed runs at startup.
+   - **Customizable Manual Dispatch**: Easily adjust execution window, retention cap, log verbosity, and toggle Privacy Mode.
+2. **Auto-Purge History Daemon (`.github/workflows/cleanup.yml`)**:
+   - **Automated Trigger**: Triggers automatically whenever the sync pipeline finishes a session (via `/stop`, timeout, or cancellation).
+   - **Zero Footprint**: Deletes the completed workflow run and its execution logs from GitHub via GitHub Actions REST API so no sensitive metadata or logs persist.
 
 ---
 
