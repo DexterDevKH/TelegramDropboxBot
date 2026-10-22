@@ -4,7 +4,8 @@ import time
 import asyncio
 import logging
 import tempfile
-from telethon import TelegramClient, events
+from telethon import TelegramClient, events, Button
+from telethon.tl import types
 import dropbox
 from dropbox.files import WriteMode, CommitInfo
 from dropbox.exceptions import ApiError, AuthError, BadInputError, DropboxException
@@ -28,6 +29,7 @@ DROPBOX_ACCESS_TOKEN = os.getenv("DROPBOX_ACCESS_TOKEN")
 DROPBOX_TARGET_FOLDER = os.getenv("DROPBOX_TARGET_FOLDER", "/Telegram_Uploads").strip()
 AUTHORIZED_USER_IDS_RAW = os.getenv("AUTHORIZED_USER_IDS", "").strip()
 MAX_RUN_TIME_MINUTES = int(os.getenv("MAX_RUN_TIME_MINUTES", "340"))
+MAX_FILES_IN_FOLDER = int(os.getenv("MAX_FILES_IN_FOLDER", "2"))  # Keep only 2 files
 
 # Validate Telegram credentials
 if not TELEGRAM_BOT_TOKEN:
@@ -87,8 +89,42 @@ def format_size(size_bytes: int) -> str:
         size_bytes /= 1024.0
     return f"{size_bytes:.2f} TB"
 
+# Enforce maximum file limit by deleting oldest files
+def cleanup_old_files(folder_path: str, max_files: int = 2) -> list:
+    deleted_files = []
+    try:
+        files = []
+        result = dbx.files_list_folder(folder_path)
+        while True:
+            for entry in result.entries:
+                if isinstance(entry, dropbox.files.FileMetadata):
+                    files.append(entry)
+            if not result.has_more:
+                break
+            result = dbx.files_list_folder_continue(result.cursor)
+
+        if len(files) > max_files:
+            # Sort files by server_modified ascending (oldest first)
+            files.sort(key=lambda x: x.server_modified)
+            num_to_delete = len(files) - max_files
+            for old_file in files[:num_to_delete]:
+                try:
+                    dbx.files_delete_v2(old_file.path_lower)
+                    deleted_files.append(old_file.name)
+                    logger.info(f"Auto-cleaned oldest file from Dropbox: {old_file.name} ({old_file.server_modified})")
+                except Exception as del_err:
+                    logger.error(f"Failed to delete old file {old_file.name}: {del_err}")
+
+    except ApiError as e:
+        # Folder might not exist yet if this is the very first file
+        logger.warning(f"Folder listing skipped for cleanup ({folder_path}): {e}")
+    except Exception as e:
+        logger.error(f"Error during folder cleanup: {e}")
+
+    return deleted_files
+
 # Chunked upload to Dropbox (supports files up to multiple gigabytes)
-def upload_file_to_dropbox(local_file_path: str, dropbox_dest_path: str, chunk_size_mb: int = 8) -> str:
+def upload_file_to_dropbox(local_file_path: str, dropbox_dest_path: str, target_folder: str, chunk_size_mb: int = 8):
     file_size = os.path.getsize(local_file_path)
     chunk_size = chunk_size_mb * 1024 * 1024
 
@@ -112,24 +148,28 @@ def upload_file_to_dropbox(local_file_path: str, dropbox_dest_path: str, chunk_s
 
     logger.info(f"File successfully written to Dropbox: {dropbox_dest_path}")
 
+    # Enforce folder file limit (keep only 2 files, delete oldest)
+    deleted_files = cleanup_old_files(target_folder, max_files=MAX_FILES_IN_FOLDER)
+
     # Generate or retrieve a shared link safely
+    shared_url = ""
     try:
         shared_link_metadata = dbx.sharing_create_shared_link_with_settings(dropbox_dest_path)
-        return shared_link_metadata.url
+        shared_url = shared_link_metadata.url
     except ApiError as err:
         if err.error.is_shared_link_already_exists():
             try:
                 links = dbx.sharing_list_shared_links(path=dropbox_dest_path, direct_only=True).links
                 if links:
-                    return links[0].url
+                    shared_url = links[0].url
             except Exception:
                 pass
         logger.warning(f"Could not generate shared link (ApiError): {err}")
-        return ""
     except (BadInputError, DropboxException, Exception) as err:
         # Prevents failure when the app lacks 'sharing.write' scope
         logger.warning(f"Shared link skipped (missing 'sharing.write' scope or error): {err}")
-        return ""
+
+    return shared_url, deleted_files
 
 # Initialize Telethon Client with Bot Token
 client = TelegramClient("bot_session", int(TELEGRAM_API_ID), TELEGRAM_API_HASH)
@@ -157,6 +197,7 @@ async def message_handler(event):
             f"👤 **Your Telegram ID:** `{user_id}`\n"
             f"🔒 **Access Status:** {auth_status}\n"
             f"📁 **Dropbox Destination:** `{DROPBOX_TARGET_FOLDER}`\n"
+            f"📦 **Folder Retention:** Max `{MAX_FILES_IN_FOLDER}` files (oldest auto-deleted)\n"
             "⚡ **Max File Size:** `2,000 MB (2 GB)`\n\n"
             "📥 **How to use:**\n"
             "Send or forward any file, video, image, document, or audio to this bot. "
@@ -208,16 +249,16 @@ async def message_handler(event):
         )
 
         await status_msg.edit(
-            f"☁️ **Uploading to Dropbox...**\n"
+            f"☁️ **Uploading to Dropbox & verifying file retention...**\n"
             f"📄 `{filename}` ({formatted_size})"
         )
 
         dropbox_path = f"{DROPBOX_TARGET_FOLDER.rstrip('/')}/{filename}"
 
-        # Execute Dropbox upload in thread pool to avoid blocking async event loop
+        # Execute Dropbox upload and auto-cleanup in thread pool
         loop = asyncio.get_event_loop()
-        shared_url = await loop.run_in_executor(
-            None, upload_file_to_dropbox, local_path, dropbox_path
+        shared_url, deleted_files = await loop.run_in_executor(
+            None, upload_file_to_dropbox, local_path, dropbox_path, DROPBOX_TARGET_FOLDER
         )
 
         # Upload complete notification
@@ -225,14 +266,29 @@ async def message_handler(event):
             "✅ **Upload Complete!**\n\n"
             f"📁 **Folder:** `{DROPBOX_TARGET_FOLDER}`\n"
             f"📄 **File:** `{filename}`\n"
-            f"📦 **Size:** `{formatted_size}`\n"
+            f"📦 **Size:** `{formatted_size}`"
         )
-        if shared_url:
-            reply_text += f"\n🔗 [Open in Dropbox]({shared_url})"
-        else:
-            reply_text += "\nℹ️ *Saved to Dropbox.*"
 
-        await status_msg.edit(reply_text, link_preview=False)
+        # Report auto-deleted files if cleanup was triggered
+        if deleted_files:
+            deleted_list_str = ", ".join([f"`{name}`" for name in deleted_files])
+            reply_text += f"\n🗑️ **Auto-cleaned (Max {MAX_FILES_IN_FOLDER} files):** Deleted oldest file {deleted_list_str}"
+
+        buttons = None
+        if shared_url:
+            reply_text += f"\n\n🔗 **Dropbox Link:** (Tap to copy)\n`{shared_url}`"
+            try:
+                # Native Telegram 1-tap Copy Text button (copies directly to clipboard)
+                if hasattr(types, "KeyboardButtonCopy"):
+                    buttons = [[types.KeyboardButtonCopy(text="📋 Copy Link", copy_text=shared_url)]]
+                else:
+                    buttons = [[Button.url("📋 Copy Link", shared_url)]]
+            except Exception:
+                buttons = [[Button.url("📋 Copy Link", shared_url)]]
+        else:
+            reply_text += "\n\nℹ️ *Saved to Dropbox.*"
+
+        await status_msg.edit(reply_text, buttons=buttons, link_preview=False)
         logger.info(f"Successfully processed: {filename} ({formatted_size})")
 
     except Exception as e:
@@ -250,7 +306,7 @@ async def main():
     await client.start(bot_token=TELEGRAM_BOT_TOKEN)
     me = await client.get_me()
     logger.info(f"Bot online as @{me.username} via Telethon MTProto engine.")
-    logger.info(f"Target Dropbox Folder: {DROPBOX_TARGET_FOLDER}")
+    logger.info(f"Target Dropbox Folder: {DROPBOX_TARGET_FOLDER} (Max files: {MAX_FILES_IN_FOLDER})")
     logger.info(f"Max execution time: {MAX_RUN_TIME_MINUTES} minutes")
 
     async def timeout_guard():
