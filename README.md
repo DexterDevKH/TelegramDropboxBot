@@ -97,6 +97,33 @@ The pipeline workflow (`.github/workflows/bot.yml`) features:
 
 ---
 
+## ☁️ Deploy to Northflank (Free 24/7 Cloud Hosting)
+
+Northflank offers a free Developer tier (512 MB RAM, 0.2 vCPU) capable of running this bot continuously 24/7 without sleeping.
+
+### Deployment Steps:
+1. Sign up for free at [northflank.com](https://northflank.com).
+2. Create a new **Project**.
+3. Click **Create Service** ➔ Select **Deployment** service.
+4. Set **Source**: Link your GitHub account and select this repository (`main` branch).
+5. Set **Build**: Choose **Dockerfile** (Northflank will auto-detect the root `Dockerfile`).
+6. Set **Service Type**: Select **Web Service** or **Worker Service**.
+   - If Web Service: Set Port to `8000` (HTTP health check endpoint automatically responds with `200 OK`).
+   - If Worker: No port needed.
+7. Under **Environment Variables**, add:
+   - `TELEGRAM_BOT_TOKEN`
+   - `TELEGRAM_API_ID`
+   - `TELEGRAM_API_HASH`
+   - `DROPBOX_APP_KEY`
+   - `DROPBOX_APP_SECRET`
+   - `DROPBOX_REFRESH_TOKEN`
+   - `AUTHORIZED_USER_IDS` *(optional)*
+   - `DROPBOX_TARGET_FOLDER` *(optional, default `/Telegram_Uploads`)*
+   - `MAX_FILES_IN_FOLDER` *(optional, default `2`)*
+8. Click **Deploy Service**.
+
+---
+
 ## 📄 License
 
 MIT License. Designed for automated cloud data ingestion.
