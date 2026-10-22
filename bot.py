@@ -489,7 +489,7 @@ async def handle_incoming_message(event):
         "──────────────────────────────\n"
         f"📄 **Filename:** `{filename}`\n"
         f"📦 **Filesize:** `{formatted_total_size}`\n"
-        "🔄 **Pipeline:** `[1/2 Connecting to Telegram MTProto...]`"
+        "⚡ **Status:** Connecting to Telegram..."
     )
     status_msg = await event.reply(init_card)
 
@@ -515,10 +515,8 @@ async def handle_incoming_message(event):
                 "──────────────────────────────\n"
                 f"📄 **Filename:** `{filename}`\n"
                 f"📦 **Received:** `{format_size(current_bytes)}` / `{formatted_total_size}`\n"
-                f"⚡ **Ingest Speed:** `{format_size(int(speed))}/s`  •  ⏳ **ETA:** `{format_eta(eta)}`\n"
-                f"📊 **Progress:** `{render_progress_bar(pct)}`\n"
-                "──────────────────────────────\n"
-                "🔄 **Pipeline:** `[1/2 Ingesting ⬇️] ➔ [2/2 Cloud Sync ⏳]`"
+                f"⚡ **Speed:** `{format_size(int(speed))}/s`  •  ⏳ **ETA:** `{format_eta(eta)}`\n"
+                f"📊 **Progress:** `{render_progress_bar(pct)}`"
             )
             await safe_edit_message(status_msg, card)
 
@@ -539,7 +537,7 @@ async def handle_incoming_message(event):
             f"📄 **Filename:** `{filename}`\n"
             f"📦 **Filesize:** `{formatted_total_size}`\n"
             f"⏱️ **Ingest Time:** `{download_duration:.1f}s`\n"
-            "🔄 **Pipeline:** `[1/2 Ingested ✅] ➔ [2/2 Initializing Cloud Stream...]`"
+            "⚡ **Status:** Initializing cloud transfer..."
         )
 
         dropbox_target_path = f"{DROPBOX_TARGET_FOLDER.rstrip('/')}/{filename}"
@@ -563,10 +561,8 @@ async def handle_incoming_message(event):
                     "──────────────────────────────\n"
                     f"📄 **Filename:** `{filename}`\n"
                     f"📦 **Uploaded:** `{format_size(current_bytes)}` / `{formatted_total_size}`\n"
-                    f"⚡ **Upload Speed:** `{format_size(int(speed))}/s`  •  ⏳ **ETA:** `{format_eta(eta)}`\n"
-                    f"📊 **Progress:** `{render_progress_bar(pct)}`\n"
-                    "──────────────────────────────\n"
-                    "🔄 **Pipeline:** `[1/2 Ingested ✅] ➔ [2/2 Cloud Sync 🚀]`"
+                    f"⚡ **Speed:** `{format_size(int(speed))}/s`  •  ⏳ **ETA:** `{format_eta(eta)}`\n"
+                    f"📊 **Progress:** `{render_progress_bar(pct)}`"
                 )
                 asyncio.run_coroutine_threadsafe(
                     safe_edit_message(status_msg, card),
