@@ -1,9 +1,8 @@
-name: Telegram to Dropbox Bot Runner
+name: Telegram to Dropbox Bot Runner (2 GB MTProto)
 
 on:
-  workflow_dispatch: # Allows manual trigger from GitHub Actions web UI
+  workflow_dispatch:
   schedule:
-    # Runs every 6 hours to cycle the listener within GitHub Action limits
     - cron: '0 */6 * * *'
   push:
     branches:
@@ -19,7 +18,7 @@ concurrency:
 jobs:
   run-bot:
     runs-on: ubuntu-latest
-    timeout-minutes: 355 # GitHub Actions job hard limit is 360 minutes
+    timeout-minutes: 355
 
     steps:
       - name: Checkout Code
@@ -39,6 +38,8 @@ jobs:
       - name: Run Telegram to Dropbox Bot
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_API_ID: ${{ secrets.TELEGRAM_API_ID }}
+          TELEGRAM_API_HASH: ${{ secrets.TELEGRAM_API_HASH }}
           DROPBOX_APP_KEY: ${{ secrets.DROPBOX_APP_KEY }}
           DROPBOX_APP_SECRET: ${{ secrets.DROPBOX_APP_SECRET }}
           DROPBOX_REFRESH_TOKEN: ${{ secrets.DROPBOX_REFRESH_TOKEN }}
