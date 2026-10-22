@@ -2,6 +2,24 @@ name: Telegram to Dropbox Sync Pipeline
 
 on:
   workflow_dispatch:
+    inputs:
+      run_time_minutes:
+        description: 'Execution window in minutes (max: 350)'
+        required: false
+        default: '340'
+      retention_cap:
+        description: 'Dropbox folder FIFO retention cap (number of files)'
+        required: false
+        default: '2'
+      log_level:
+        description: 'Logging verbosity level'
+        required: false
+        default: 'INFO'
+        type: choice
+        options:
+          - 'INFO'
+          - 'DEBUG'
+          - 'WARNING'
   schedule:
     # Cycles runner every 6 hours to maintain 24/7 uptime within CI limits
     - cron: '0 */6 * * *'
@@ -11,6 +29,7 @@ on:
     paths-ignore:
       - 'README.md'
       - '.gitignore'
+      - 'docs/**'
 
 concurrency:
   group: tg-dropbox-sync-daemon
@@ -18,7 +37,7 @@ concurrency:
 
 jobs:
   sync-service:
-    name: Run Media Sync Daemon
+    name: Run Cloud Sync Engine
     runs-on: ubuntu-latest
     timeout-minutes: 355
 
@@ -32,23 +51,89 @@ jobs:
           python-version: '3.11'
           cache: 'pip'
 
-      - name: Install Pinned Dependencies
+      - name: Install Production Dependencies
         run: |
+          echo "::group::📦 Installing Dependencies"
           python -m pip install --upgrade pip
           pip install -r requirements.txt
+          echo "::endgroup::"
 
-      - name: Launch Sync Engine
+      - name: Pre-Flight Secrets & Configuration Audit
+        shell: bash
+        run: |
+          echo "::group::🔍 Auditing Secrets & Environment Configuration"
+          MISSING=0
+          check_secret() {
+            NAME="$1"
+            VAL="$2"
+            if [ -z "$VAL" ]; then
+              echo "::error::Missing required GitHub Secret: $NAME"
+              MISSING=1
+            else
+              echo "  ✔ Secret present: $NAME"
+            fi
+          }
+
+          check_secret "TELEGRAM_BOT_TOKEN" "${{ secrets.TELEGRAM_BOT_TOKEN }}"
+          check_secret "TELEGRAM_API_ID" "${{ secrets.TELEGRAM_API_ID }}"
+          check_secret "TELEGRAM_API_HASH" "${{ secrets.TELEGRAM_API_HASH }}"
+
+          if [ -z "${{ secrets.DROPBOX_REFRESH_TOKEN }}" ] && [ -z "${{ secrets.DROPBOX_ACCESS_TOKEN }}" ]; then
+            echo "::error::Missing Dropbox Token: Either DROPBOX_REFRESH_TOKEN or DROPBOX_ACCESS_TOKEN must be configured."
+            MISSING=1
+          else
+            echo "  ✔ Dropbox authentication token present"
+          fi
+
+          if [ "$MISSING" -eq 1 ]; then
+            echo ""
+            echo "❌ Pre-flight check failed! Please configure missing secrets in: Repository Settings ➔ Secrets and variables ➔ Actions"
+            exit 1
+          fi
+          echo "✅ All required authentication credentials verified."
+          echo "::endgroup::"
+
+      - name: Publish Pipeline Deployment Summary
+        shell: bash
+        run: |
+          cat << 'EOF' >> $GITHUB_STEP_SUMMARY
+          # ⚡ Telegram to Dropbox Sync Pipeline
+
+          ### 🛰️ Runner Specifications & Status
+          | Property | Value |
+          | :--- | :--- |
+          | **Host Platform** | Ubuntu Linux (`ubuntu-latest`) |
+          | **Runtime Environment** | Python 3.11 (with cached pip wheels) |
+          | **Trigger Source** | `${{ github.event_name }}` |
+          | **Concurrency Policy** | Singleton (`cancel-in-progress: true`) |
+
+          ### ⚙️ Engine Parameters
+          | Parameter | Configured Value | Description |
+          | :--- | :--- | :--- |
+          | **Target Vault** | `${{ secrets.DROPBOX_TARGET_FOLDER || '/Telegram_Uploads' }}` | Dropbox destination folder |
+          | **Retention Cap** | `${{ github.event.inputs.retention_cap || secrets.MAX_FILES_IN_FOLDER || '2' }} files` | FIFO auto-rotation policy |
+          | **Execution Window** | `${{ github.event.inputs.run_time_minutes || '340' }} minutes` | Session lifecycle before clean cycle |
+          | **Chunk Size** | `8 MB` | Streaming session upload chunk size |
+          | **Direct Copy API** | `Telegram Bot API v7.0+` | Native one-tap clipboard copy buttons |
+
+          > 💡 **Active Service:** The MTProto daemon is now listening for incoming media files and direct commands (`/status`, `/ping`, `/stop`).
+          EOF
+
+      - name: Launch Cloud Sync Daemon
         env:
+          PYTHONUNBUFFERED: "1"
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_API_ID: ${{ secrets.TELEGRAM_API_ID }}
           TELEGRAM_API_HASH: ${{ secrets.TELEGRAM_API_HASH }}
           DROPBOX_APP_KEY: ${{ secrets.DROPBOX_APP_KEY }}
           DROPBOX_APP_SECRET: ${{ secrets.DROPBOX_APP_SECRET }}
           DROPBOX_REFRESH_TOKEN: ${{ secrets.DROPBOX_REFRESH_TOKEN }}
+          DROPBOX_ACCESS_TOKEN: ${{ secrets.DROPBOX_ACCESS_TOKEN }}
           AUTHORIZED_USER_IDS: ${{ secrets.AUTHORIZED_USER_IDS }}
           DROPBOX_TARGET_FOLDER: ${{ secrets.DROPBOX_TARGET_FOLDER || '/Telegram_Uploads' }}
-          MAX_FILES_IN_FOLDER: ${{ secrets.MAX_FILES_IN_FOLDER || '2' }}
-          MAX_RUN_TIME_MINUTES: "340"
+          MAX_FILES_IN_FOLDER: ${{ github.event.inputs.retention_cap || secrets.MAX_FILES_IN_FOLDER || '2' }}
+          MAX_RUN_TIME_MINUTES: ${{ github.event.inputs.run_time_minutes || '340' }}
           CHUNK_SIZE_MB: "8"
+          LOG_LEVEL: ${{ github.event.inputs.log_level || 'INFO' }}
         run: |
           python bot.py

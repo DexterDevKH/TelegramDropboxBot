@@ -1,5 +1,9 @@
-python-telegram-bot>=21.7
+# Telegram MTProto Client & Fast Cryptography
 telethon>=1.36.0
-dropbox>=11.36.2
 cryptg>=0.4.0
+
+# Dropbox Cloud Storage SDK
+dropbox>=11.36.2
+
+# HTTP Client for Bot API Direct Clipboard Actions
 requests>=2.31.0
