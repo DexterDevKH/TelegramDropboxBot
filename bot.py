@@ -58,46 +58,13 @@ DROPBOX_ACCESS_TOKEN = os.getenv("DROPBOX_ACCESS_TOKEN")
 DROPBOX_TARGET_FOLDER = os.getenv("DROPBOX_TARGET_FOLDER", "/Telegram_Uploads").strip()
 
 AUTHORIZED_USER_IDS_RAW = os.getenv("AUTHORIZED_USER_IDS", "").strip()
-
-# Cloud Platform & Timeout Detection (Northflank, Render, Koyeb, GitHub Actions)
-PORT = os.getenv("PORT")
-IS_CLOUD_HOST = bool(PORT or os.getenv("NORTHFLANK_SERVICE_ID") or os.getenv("RENDER") or os.getenv("KOYEB_SERVICE_NAME"))
-
-raw_timeout = os.getenv("MAX_RUN_TIME_MINUTES")
-if raw_timeout is not None:
-    MAX_RUN_TIME_MINUTES = int(raw_timeout)
-else:
-    # 0 = continuous 24/7 on cloud hosts like Northflank; 340 minutes default on GitHub Actions
-    MAX_RUN_TIME_MINUTES = 0 if IS_CLOUD_HOST else 340
-
+MAX_RUN_TIME_MINUTES = int(os.getenv("MAX_RUN_TIME_MINUTES", "340"))
 MAX_FILES_IN_FOLDER = int(os.getenv("MAX_FILES_IN_FOLDER", "2"))
 CHUNK_SIZE_MB = int(os.getenv("CHUNK_SIZE_MB", "8"))
 
 START_TIMESTAMP = time.time()
 SESSION_TRANSFERS_COUNT = 0
 SESSION_TRANSFERS_BYTES = 0
-
-async def handle_http_health_check(reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
-    """Zero-dependency HTTP 200 health check endpoint for Northflank & cloud platforms."""
-    try:
-        await reader.read(1024)
-        body = b'{"status":"healthy","service":"TelegramDropboxBot","provider":"Northflank"}\n'
-        headers = (
-            b"HTTP/1.1 200 OK\r\n"
-            b"Content-Type: application/json\r\n"
-            b"Content-Length: " + str(len(body)).encode("ascii") + b"\r\n"
-            b"Connection: close\r\n\r\n"
-        )
-        writer.write(headers + body)
-        await writer.drain()
-    except Exception:
-        pass
-    finally:
-        try:
-            writer.close()
-            await writer.wait_closed()
-        except Exception:
-            pass
 
 # Validate Telegram Environment
 if not TELEGRAM_BOT_TOKEN:
@@ -411,12 +378,11 @@ async def handle_incoming_message(event):
         t0 = time.time()
         sent = await event.reply("⚡ `Pinging host runner...`")
         latency_ms = max(1, int((time.time() - t0) * 1000))
-        host_label = "Northflank Cloud Server (24/7)" if IS_CLOUD_HOST else "GitHub Actions CI Runner"
         ping_card = (
             "⚡ **GATEWAY PONG**\n"
             "──────────────────────────────\n"
             f"⏱️ **Round-Trip Latency:** `{latency_ms} ms`\n"
-            f"🛰️ **Compute Host:** `{host_label}`\n"
+            "🛰️ **Compute Host:** `GitHub Actions CI Runner`\n"
             "🟢 **Engine Health:** `Operational (100%)`\n"
             f"🤖 **Bot Client:** `@{BOT_USERNAME}`"
         )
@@ -426,19 +392,7 @@ async def handle_incoming_message(event):
     # Command: /status, /info (Real-time system & cloud storage status)
     if event.raw_text in ["/status", "/info"]:
         elapsed = int(time.time() - START_TIMESTAMP)
-        host_label = "Northflank Cloud" if IS_CLOUD_HOST else "GitHub Actions Runner"
-
-        if MAX_RUN_TIME_MINUTES > 0:
-            remaining_secs = max(0, (MAX_RUN_TIME_MINUTES * 60) - elapsed)
-            runtime_info = (
-                f"⏱️ **Session Uptime:** `{format_eta(elapsed)}` / `{MAX_RUN_TIME_MINUTES}m`\n"
-                f"⏳ **Window Remaining:** `{format_eta(remaining_secs)}`\n\n"
-            )
-        else:
-            runtime_info = (
-                f"⏱️ **Session Uptime:** `{format_eta(elapsed)}` (Continuous 24/7)\n"
-                f"🛰️ **Compute Host:** `{host_label}`\n\n"
-            )
+        remaining_secs = max(0, (MAX_RUN_TIME_MINUTES * 60) - elapsed)
 
         # Dropbox Folder File Count
         file_count_display = "Scanning..."
@@ -473,8 +427,9 @@ async def handle_incoming_message(event):
             "📊 **SYSTEM & CLOUD HEALTH MONITOR**\n"
             "──────────────────────────────\n"
             "🟢 **Daemon State:** `Online & Operational`\n"
-            + runtime_info
-            + "☁️ **Dropbox Cloud Storage**\n"
+            f"⏱️ **Session Uptime:** `{format_eta(elapsed)}` / `{MAX_RUN_TIME_MINUTES}m`\n"
+            f"⏳ **Window Remaining:** `{format_eta(remaining_secs)}`\n\n"
+            "☁️ **Dropbox Cloud Storage**\n"
             f"• **Account:** {account_display}\n"
             f"• **Target Vault:** `{DROPBOX_TARGET_FOLDER}`\n"
             f"• **File Count:** {file_count_display}\n"
@@ -732,12 +687,6 @@ async def run_daemon():
         else "Public (All users permitted)"
     )
 
-    session_label = (
-        f"{MAX_RUN_TIME_MINUTES} minutes (CI timeout)"
-        if MAX_RUN_TIME_MINUTES > 0
-        else "Continuous 24/7 (Unlimited)"
-    )
-
     logger.info("┌" + "─" * 68 + "┐")
     logger.info("│ ⚡ TELEGRAM TO DROPBOX SYNC PIPELINE (ENTERPRISE MTPROTO)       │")
     logger.info("├" + "─" * 68 + "┤")
@@ -746,42 +695,24 @@ async def run_daemon():
     logger.info(f"│ • Target Directory:  {DROPBOX_TARGET_FOLDER:<46} │")
     logger.info(f"│ • FIFO Retention:    {MAX_FILES_IN_FOLDER} files maximum{' ':<31} │")
     logger.info(f"│ • Chunk Streaming:   {CHUNK_SIZE_MB} MB chunks{' ':<34} │")
-    logger.info(f"│ • Session Window:    {session_label:<46} │")
-    if PORT:
-        logger.info(f"│ • Web Health Port:   0.0.0.0:{PORT:<38} │")
+    logger.info(f"│ • Session Window:    {MAX_RUN_TIME_MINUTES} minutes{' ':<33} │")
     logger.info(f"│ • Access Control:    {auth_summary:<46} │")
     logger.info(f"│ • Direct Copy API:   Armed (Telegram Bot API v7.0+){' ':<17} │")
     logger.info("└" + "─" * 68 + "┘")
 
-    # Start Lightweight HTTP Health Check Server if PORT is specified (Northflank/Koyeb/Render)
-    http_server = None
-    if PORT:
+    async def lifecycle_timeout():
         try:
-            port_num = int(PORT)
-            http_server = await asyncio.start_server(handle_http_health_check, "0.0.0.0", port_num)
-            logger.info(f"Northflank HTTP health server active on 0.0.0.0:{port_num}")
-        except Exception as exc:
-            logger.warning(f"Could not bind HTTP health check server on port {PORT}: {exc}")
+            await asyncio.wait_for(shutdown_event.wait(), timeout=MAX_RUN_TIME_MINUTES * 60)
+        except asyncio.TimeoutError:
+            logger.info(f"Execution window reached ({MAX_RUN_TIME_MINUTES} min). Cycling runner cleanly...")
+            await client.disconnect()
 
-    timeout_task = None
-    if MAX_RUN_TIME_MINUTES > 0:
-        async def lifecycle_timeout():
-            try:
-                await asyncio.wait_for(shutdown_event.wait(), timeout=MAX_RUN_TIME_MINUTES * 60)
-            except asyncio.TimeoutError:
-                logger.info(f"Execution window reached ({MAX_RUN_TIME_MINUTES} min). Cycling runner cleanly...")
-                await client.disconnect()
-
-        timeout_task = asyncio.create_task(lifecycle_timeout())
+    timeout_task = asyncio.create_task(lifecycle_timeout())
 
     try:
         await client.run_until_disconnected()
     finally:
-        if timeout_task:
-            timeout_task.cancel()
-        if http_server:
-            http_server.close()
-            await http_server.wait_closed()
+        timeout_task.cancel()
         logger.info("Sync engine stopped cleanly.")
 
 if __name__ == "__main__":
