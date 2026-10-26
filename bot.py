@@ -63,6 +63,12 @@ MAX_FILES_IN_FOLDER = int(os.getenv("MAX_FILES_IN_FOLDER", "2"))
 CHUNK_SIZE_MB = int(os.getenv("CHUNK_SIZE_MB", "8"))
 PRIVACY_MODE = os.getenv("PRIVACY_MODE", "true").strip().lower() in ("true", "1", "yes")
 
+# On-Demand Serverless Dispatch Parameters
+TARGET_CHAT_ID = os.getenv("TARGET_CHAT_ID", "").strip()
+TARGET_MESSAGE_ID = os.getenv("TARGET_MESSAGE_ID", "").strip()
+IDLE_KEEP_ALIVE_SECONDS = int(os.getenv("IDLE_KEEP_ALIVE_SECONDS", "180"))
+LAST_ACTIVITY_TIMESTAMP = time.time()
+
 START_TIMESTAMP = time.time()
 SESSION_TRANSFERS_COUNT = 0
 SESSION_TRANSFERS_BYTES = 0
@@ -369,11 +375,22 @@ BOT_USERNAME = "Unknown"
 @client.on(events.NewMessage)
 async def handle_incoming_message(event):
     """Primary handler for direct messages, media ingestion, and remote controls."""
-    global SESSION_TRANSFERS_COUNT, SESSION_TRANSFERS_BYTES
-    if not event.is_private:
+    await process_message(event)
+
+async def process_message(target):
+    """Unified handler for both live events and fetched Message objects."""
+    global SESSION_TRANSFERS_COUNT, SESSION_TRANSFERS_BYTES, LAST_ACTIVITY_TIMESTAMP
+    LAST_ACTIVITY_TIMESTAMP = time.time()
+
+    if hasattr(target, "message") and isinstance(target.message, types.Message):
+        msg = target.message
+    else:
+        msg = target
+
+    if not getattr(msg, "is_private", True):
         return
 
-    sender = await event.get_sender()
+    sender = await msg.get_sender()
     user_id = sender.id if sender else 0
     sender_name = getattr(sender, "first_name", "Authorized User") or "Authorized User"
 
@@ -388,12 +405,13 @@ async def handle_incoming_message(event):
             "──────────────────────────────\n"
             "💡 *To authorize, add your Telegram ID to `AUTHORIZED_USER_IDS` in GitHub Secrets.*"
         )
-        await event.reply(denied_card)
+        await msg.reply(denied_card)
         logger.warning(f"Unauthorized access attempt from user_id: {mask_user_id(user_id)}")
         return
 
     # Command: /stop, /shutdown, /kill (Gracefully stops the runner)
-    if event.raw_text in ["/stop", "/shutdown", "/kill"]:
+    raw_text = getattr(msg, "raw_text", "") or ""
+    if raw_text in ["/stop", "/shutdown", "/kill"]:
         elapsed = int(time.time() - START_TIMESTAMP)
         stop_card = (
             "🛑 **RUNNER SHUTDOWN INITIATED**\n"
@@ -404,7 +422,7 @@ async def handle_incoming_message(event):
             "──────────────────────────────\n"
             "✅ Daemon disconnecting and terminating GitHub Actions runner with Exit Code 0."
         )
-        await event.reply(stop_card)
+        await msg.reply(stop_card)
         if PRIVACY_MODE:
             logger.info("Stop command received from authorized user. Terminating...")
         else:
@@ -414,9 +432,9 @@ async def handle_incoming_message(event):
         return
 
     # Command: /ping (Measures gateway round-trip latency)
-    if event.raw_text in ["/ping"]:
+    if raw_text in ["/ping"]:
         t0 = time.time()
-        sent = await event.reply("⚡ `Pinging host runner...`")
+        sent = await msg.reply("⚡ `Pinging host runner...`")
         latency_ms = max(1, int((time.time() - t0) * 1000))
         ping_card = (
             "⚡ **GATEWAY PONG**\n"
@@ -430,7 +448,7 @@ async def handle_incoming_message(event):
         return
 
     # Command: /status, /info (Real-time system & cloud storage status)
-    if event.raw_text in ["/status", "/info"]:
+    if raw_text in ["/status", "/info"]:
         elapsed = int(time.time() - START_TIMESTAMP)
         remaining_secs = max(0, (MAX_RUN_TIME_MINUTES * 60) - elapsed)
 
@@ -483,11 +501,11 @@ async def handle_incoming_message(event):
             "──────────────────────────────\n"
             "💡 *Send /stop anytime to safely terminate runner before scheduled cycle.*"
         )
-        await event.reply(status_card)
+        await msg.reply(status_card)
         return
 
     # Command: /start, /help (Operational manual)
-    if event.raw_text in ["/start", "/help"]:
+    if raw_text in ["/start", "/help"]:
         status_label = "Authorized ✅" if is_authorized(user_id) else "Unauthorized ❌"
         help_card = (
             "⚡ **TELEGRAM TO DROPBOX SYNC ENGINE**\n"
@@ -506,19 +524,19 @@ async def handle_incoming_message(event):
             "💡 **Quick Transfer:** Simply forward or upload any document, video, or archive. "
             "You will receive live download and upload progress, followed by a one-tap direct copy button."
         )
-        await event.reply(help_card)
+        await msg.reply(help_card)
         return
 
     # Check for Media Attachment
-    if not event.message.media:
+    if not msg.media:
         return
 
     # Extract Metadata
-    file_size = event.message.file.size if event.message.file else 0
+    file_size = msg.file.size if msg.file else 0
     raw_name = (
-        event.message.file.name
-        if event.message.file and event.message.file.name
-        else f"payload_{event.message.id}.bin"
+        msg.file.name
+        if msg.file and msg.file.name
+        else f"payload_{msg.id}.bin"
     )
     filename = sanitize_filename(raw_name)
     formatted_total_size = format_size(file_size)
@@ -531,7 +549,7 @@ async def handle_incoming_message(event):
         f"📦 **Filesize:** `{formatted_total_size}`\n"
         "⚡ **Status:** Connecting to Telegram..."
     )
-    status_msg = await event.reply(init_card)
+    status_msg = await msg.reply(init_card)
 
     tmp_dir = tempfile.gettempdir()
     local_target = os.path.join(tmp_dir, f"{int(time.time())}_{filename}")
@@ -563,7 +581,7 @@ async def handle_incoming_message(event):
     try:
         # Step 1: MTProto Download
         await client.download_media(
-            event.message,
+            msg,
             file=local_target,
             progress_callback=download_progress_hook
         )
@@ -645,6 +663,10 @@ async def handle_incoming_message(event):
                 f"• Pruned oldest: {pruned_str}\n"
             )
 
+        target_chat_id = getattr(msg, "chat_id", getattr(msg, "peer_id", None))
+        if hasattr(target_chat_id, "user_id"):
+            target_chat_id = target_chat_id.user_id
+
         if shared_url:
             # Edit text first with base Open in Dropbox button
             await safe_edit_message(
@@ -659,7 +681,7 @@ async def handle_incoming_message(event):
             applied = await loop.run_in_executor(
                 None,
                 apply_native_copy_buttons,
-                event.chat_id,
+                target_chat_id,
                 status_msg.id,
                 shared_url
             )
@@ -697,6 +719,72 @@ async def handle_incoming_message(event):
                 os.remove(local_target)
             except Exception:
                 pass
+
+# ---------------------------------------------------------------------------
+# On-Demand Serverless Execution Runner
+# ---------------------------------------------------------------------------
+async def run_on_demand(chat_id: int, message_id: int):
+    """Executes targeted on-demand sync triggered by serverless webhook dispatcher."""
+    global BOT_USERNAME, LAST_ACTIVITY_TIMESTAMP
+    loop = asyncio.get_running_loop()
+
+    def instant_signal_exit():
+        logger.info("Signal received (SIGTERM/SIGINT). Initiating immediate disconnect...")
+        shutdown_event.set()
+        asyncio.create_task(client.disconnect())
+
+    for sig in (signal.SIGINT, signal.SIGTERM):
+        try:
+            loop.add_signal_handler(sig, instant_signal_exit)
+        except (NotImplementedError, RuntimeError):
+            pass
+
+    await client.start(bot_token=TELEGRAM_BOT_TOKEN)
+    me = await client.get_me()
+    BOT_USERNAME = me.username or "Bot"
+
+    if os.getenv("GITHUB_ACTIONS") == "true" and me.username:
+        print(f"::add-mask::@{me.username}", flush=True)
+        print(f"::add-mask::{me.username}", flush=True)
+
+    bot_display = "@[PROTECTED]" if PRIVACY_MODE else f"@{BOT_USERNAME}"
+    dbx_display = "[PROTECTED/MASKED]" if PRIVACY_MODE else DBX_ACCOUNT_NAME
+    folder_display = "[PROTECTED_VAULT]" if PRIVACY_MODE else DROPBOX_TARGET_FOLDER
+
+    logger.info("┌" + "─" * 68 + "┐")
+    logger.info("│ ⚡ ON-DEMAND DISPATCH ENGINE (SERVERLESS RUNNER)                │")
+    logger.info("├" + "─" * 68 + "┤")
+    logger.info(f"│ • Telegram Bot:      {bot_display:<46} │")
+    logger.info(f"│ • Dropbox Account:   {dbx_display:<46} │")
+    logger.info(f"│ • Target Directory:  {folder_display:<46} │")
+    logger.info(f"│ • Target Chat ID:    {str(chat_id):<46} │")
+    logger.info(f"│ • Target Message ID: {str(message_id):<46} │")
+    logger.info(f"│ • Idle Keep-Alive:   {IDLE_KEEP_ALIVE_SECONDS}s auto-cutoff{' ':<32} │")
+    logger.info("└" + "─" * 68 + "┘")
+
+    # Step 1: Process the targeted incoming payload
+    try:
+        target_msg = await client.get_messages(chat_id, ids=message_id)
+        if target_msg:
+            logger.info("Target payload acquired. Commencing ingestion...")
+            await process_message(target_msg)
+        else:
+            logger.warning(f"Target message {message_id} not found in chat {chat_id}.")
+    except Exception as err:
+        logger.error(f"Failed to fetch/process targeted message: {err}", exc_info=True)
+
+    # Step 2: Keep-alive window to seamlessly catch rapid album or multi-file batches
+    if IDLE_KEEP_ALIVE_SECONDS > 0:
+        logger.info(f"Keep-alive active: Monitoring for rapid follow-up files ({IDLE_KEEP_ALIVE_SECONDS}s window)...")
+        while not shutdown_event.is_set():
+            idle_elapsed = time.time() - LAST_ACTIVITY_TIMESTAMP
+            if idle_elapsed >= IDLE_KEEP_ALIVE_SECONDS:
+                logger.info(f"Idle window exceeded ({int(idle_elapsed)}s >= {IDLE_KEEP_ALIVE_SECONDS}s). Cleanly stopping runner.")
+                break
+            await asyncio.sleep(2)
+
+    await client.disconnect()
+    logger.info("On-demand session finished. Disconnected cleanly.")
 
 # ---------------------------------------------------------------------------
 # Runner Entrypoint with Fast Signal Handlers and Timeout
@@ -766,7 +854,15 @@ async def run_daemon():
 
 if __name__ == "__main__":
     try:
-        asyncio.run(run_daemon())
+        target_chat = os.getenv("TARGET_CHAT_ID", "").strip()
+        target_msg = os.getenv("TARGET_MESSAGE_ID", "").strip()
+        is_valid_chat = target_chat.lstrip("-").isdigit() if target_chat else False
+        is_valid_msg = target_msg.isdigit() if target_msg else False
+
+        if is_valid_chat and is_valid_msg:
+            asyncio.run(run_on_demand(int(target_chat), int(target_msg)))
+        else:
+            asyncio.run(run_daemon())
     except (KeyboardInterrupt, SystemExit):
         pass
     except Exception as e:

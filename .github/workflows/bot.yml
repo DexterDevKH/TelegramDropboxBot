@@ -1,6 +1,8 @@
 name: Telegram to Dropbox Sync Pipeline
 
 on:
+  repository_dispatch:
+    types: [telegram_sync]
   workflow_dispatch:
     inputs:
       run_time_minutes:
@@ -28,9 +30,9 @@ on:
           - 'INFO'
           - 'DEBUG'
           - 'WARNING'
-  schedule:
-    # Cycles runner every 6 hours to maintain 24/7 uptime within CI limits
-    - cron: '0 */6 * * *'
+  # Scheduled 24/7 daemon loop disabled in favor of on-demand serverless webhook dispatch
+  # schedule:
+  #   - cron: '0 */6 * * *'
   push:
     branches:
       - main
@@ -38,10 +40,11 @@ on:
       - 'README.md'
       - '.gitignore'
       - 'docs/**'
+      - 'webhook/**'
 
 concurrency:
-  group: tg-dropbox-sync-daemon
-  cancel-in-progress: true
+  group: tg-dropbox-sync-${{ github.event.client_payload.message_id || github.run_id }}
+  cancel-in-progress: false
 
 permissions:
   actions: write
@@ -183,6 +186,9 @@ jobs:
         env:
           PYTHONUNBUFFERED: "1"
           PRIVACY_MODE: ${{ github.event.inputs.privacy_mode || 'true' }}
+          TARGET_CHAT_ID: ${{ github.event.client_payload.chat_id }}
+          TARGET_MESSAGE_ID: ${{ github.event.client_payload.message_id }}
+          IDLE_KEEP_ALIVE_SECONDS: "180"
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_API_ID: ${{ secrets.TELEGRAM_API_ID }}
           TELEGRAM_API_HASH: ${{ secrets.TELEGRAM_API_HASH }}
