@@ -73,23 +73,6 @@ jobs:
           pip install -r requirements.txt
           echo "::endgroup::"
 
-      - name: Purge Historical Workflow Run Logs
-        shell: bash
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GH_REPO: ${{ github.repository }}
-          GH_NO_PROMPT: "1"
-        run: |
-          echo "::group::🧹 Purging Historical Workflow Run Logs"
-          gh run list --repo "${{ github.repository }}" --workflow=bot.yml --status=completed --json databaseId -q '.[].databaseId' | while read -r run_id; do
-            if [ -n "$run_id" ]; then
-              echo "Purging historical run ID: $run_id"
-              gh api -X DELETE "repos/${{ github.repository }}/actions/runs/$run_id" || true
-            fi
-          done
-          echo "✔ Historical run log cleanup complete."
-          echo "::endgroup::"
-
       - name: Pre-Flight Secrets & Privacy Shield Audit
         shell: bash
         env:
@@ -188,7 +171,8 @@ jobs:
           PRIVACY_MODE: ${{ github.event.inputs.privacy_mode || 'true' }}
           TARGET_CHAT_ID: ${{ github.event.client_payload.chat_id }}
           TARGET_MESSAGE_ID: ${{ github.event.client_payload.message_id }}
-          IDLE_KEEP_ALIVE_SECONDS: "180"
+          DISPATCH_MESSAGE_ID: ${{ github.event.client_payload.dispatch_message_id }}
+          IDLE_KEEP_ALIVE_SECONDS: "0"
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_API_ID: ${{ secrets.TELEGRAM_API_ID }}
           TELEGRAM_API_HASH: ${{ secrets.TELEGRAM_API_HASH }}
@@ -204,3 +188,21 @@ jobs:
           LOG_LEVEL: ${{ github.event.inputs.log_level || 'INFO' }}
         run: |
           python bot.py
+
+      - name: Auto-Purge Completed Workflow Runs
+        if: always()
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          GH_NO_PROMPT: "1"
+        run: |
+          echo "::group::🧹 Auto-Purging Completed Sync Pipeline Run Logs"
+          gh run list --repo "${{ github.repository }}" --workflow=bot.yml --status=completed --json databaseId -q '.[].databaseId' | while read -r run_id; do
+            if [ -n "$run_id" ]; then
+              echo "Purging completed run: $run_id"
+              gh api -X DELETE "repos/${{ github.repository }}/actions/runs/$run_id" || true
+            fi
+          done
+          echo "✔ Complete: All completed run logs and history have been purged."
+          echo "::endgroup::"

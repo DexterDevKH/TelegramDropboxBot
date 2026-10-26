@@ -83,7 +83,8 @@ export default {
           "⚡ *Waking up cloud engine to process request...*";
       }
 
-      await sendTelegramMessage(env.TELEGRAM_BOT_TOKEN, chatId, messageId, notice);
+      const sentNotice = await sendTelegramMessage(env.TELEGRAM_BOT_TOKEN, chatId, messageId, notice);
+      const dispatchMessageId = sentNotice?.message_id || null;
 
       // 4. Trigger GitHub Actions via repository_dispatch API
       const repo = env.GH_REPO || "DexterDevKH/TelegramDropboxBot";
@@ -100,6 +101,7 @@ export default {
           client_payload: {
             chat_id: chatId,
             message_id: messageId,
+            dispatch_message_id: dispatchMessageId,
             user_id: userId,
             has_media: hasMedia,
             text: text,
@@ -124,9 +126,9 @@ export default {
  * Sends a Markdown formatted response directly via Telegram Bot API
  */
 async function sendTelegramMessage(botToken, chatId, replyToId, text) {
-  if (!botToken || !chatId) return;
+  if (!botToken || !chatId) return null;
   try {
-    await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+    const resp = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -136,7 +138,10 @@ async function sendTelegramMessage(botToken, chatId, replyToId, text) {
         reply_to_message_id: replyToId,
       }),
     });
+    const data = await resp.json();
+    return data.result || null;
   } catch (err) {
     console.error("Telegram message delivery failed:", err);
+    return null;
   }
 }

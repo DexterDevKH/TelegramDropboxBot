@@ -64,10 +64,10 @@ def format_size(bytes_val: int) -> str:
     return f"{bytes_val:.1f} PB"
 
 
-def send_telegram_message(chat_id: int, reply_to_id: Optional[int], text: str) -> bool:
-    """Dispatches a direct Telegram markdown message using the standard Bot API."""
+def send_telegram_message(chat_id: int, reply_to_id: Optional[int], text: str) -> Optional[int]:
+    """Dispatches a direct Telegram markdown message and returns the message_id."""
     if not TELEGRAM_BOT_TOKEN or not chat_id:
-        return False
+        return None
 
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
     payload = {
@@ -80,13 +80,23 @@ def send_telegram_message(chat_id: int, reply_to_id: Optional[int], text: str) -
 
     try:
         resp = requests.post(url, json=payload, timeout=8)
-        return resp.status_code == 200
+        if resp.status_code == 200:
+            return resp.json().get("result", {}).get("message_id")
+        return None
     except Exception as exc:
         logger.error(f"Failed to deliver Telegram feedback message: {exc}")
-        return False
+        return None
 
 
-def dispatch_github_action(chat_id: int, message_id: int, user_id: int, has_media: bool, text: str, file_name: str) -> bool:
+def dispatch_github_action(
+    chat_id: int,
+    message_id: int,
+    user_id: int,
+    has_media: bool,
+    text: str,
+    file_name: str,
+    dispatch_message_id: Optional[int] = None
+) -> bool:
     """Dispatches the on-demand sync event to GitHub Actions via repository_dispatch."""
     if not GH_PAT:
         logger.error("Configuration Missing: GH_PAT (GitHub Personal Access Token) is not set!")
@@ -104,6 +114,7 @@ def dispatch_github_action(chat_id: int, message_id: int, user_id: int, has_medi
         "client_payload": {
             "chat_id": chat_id,
             "message_id": message_id,
+            "dispatch_message_id": dispatch_message_id,
             "user_id": user_id,
             "has_media": has_media,
             "file_name": file_name,
@@ -262,7 +273,7 @@ class WebhookHandler(BaseHTTPRequestHandler):
                 "⚡ *Waking up cloud engine to process request...*"
             )
 
-        send_telegram_message(chat_id, message_id, notice)
+        dispatch_msg_id = send_telegram_message(chat_id, message_id, notice)
 
         # 4. Trigger GitHub Actions Dispatch
         dispatched = dispatch_github_action(
@@ -271,7 +282,8 @@ class WebhookHandler(BaseHTTPRequestHandler):
             user_id=user_id,
             has_media=has_media,
             text=text,
-            file_name=file_name
+            file_name=file_name,
+            dispatch_message_id=dispatch_msg_id
         )
 
         self._send_json(200, {

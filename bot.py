@@ -66,7 +66,8 @@ PRIVACY_MODE = os.getenv("PRIVACY_MODE", "true").strip().lower() in ("true", "1"
 # On-Demand Serverless Dispatch Parameters
 TARGET_CHAT_ID = os.getenv("TARGET_CHAT_ID", "").strip()
 TARGET_MESSAGE_ID = os.getenv("TARGET_MESSAGE_ID", "").strip()
-IDLE_KEEP_ALIVE_SECONDS = int(os.getenv("IDLE_KEEP_ALIVE_SECONDS", "180"))
+DISPATCH_MESSAGE_ID = os.getenv("DISPATCH_MESSAGE_ID", "").strip()
+IDLE_KEEP_ALIVE_SECONDS = int(os.getenv("IDLE_KEEP_ALIVE_SECONDS", "0"))
 LAST_ACTIVITY_TIMESTAMP = time.time()
 
 START_TIMESTAMP = time.time()
@@ -549,7 +550,25 @@ async def process_message(target):
         f"📦 **Filesize:** `{formatted_total_size}`\n"
         "⚡ **Status:** Connecting to Telegram..."
     )
-    status_msg = await msg.reply(init_card)
+
+    # In on-demand mode, reuse the existing notice message sent by Cloudflare Worker
+    status_msg = None
+    target_chat_id = getattr(msg, "chat_id", getattr(msg, "peer_id", None))
+    if hasattr(target_chat_id, "user_id"):
+        target_chat_id = target_chat_id.user_id
+
+    if DISPATCH_MESSAGE_ID.isdigit() and target_chat_id:
+        try:
+            status_msg = await client.get_messages(target_chat_id, ids=int(DISPATCH_MESSAGE_ID))
+            if status_msg:
+                logger.info(f"Reusing existing dispatch notice message: {DISPATCH_MESSAGE_ID}")
+        except Exception as e:
+            logger.warning(f"Could not fetch dispatch message {DISPATCH_MESSAGE_ID}: {e}")
+
+    if not status_msg:
+        status_msg = await msg.reply(init_card)
+    else:
+        await safe_edit_message(status_msg, init_card)
 
     tmp_dir = tempfile.gettempdir()
     local_target = os.path.join(tmp_dir, f"{int(time.time())}_{filename}")
