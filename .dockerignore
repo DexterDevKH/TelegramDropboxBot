@@ -1,0 +1,16 @@
+.git
+.github
+.gitignore
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+*.log
+.env
+*.session
+*.session-journal
+tmp/
+scratch/
+venv/
+.venv/
+docs/

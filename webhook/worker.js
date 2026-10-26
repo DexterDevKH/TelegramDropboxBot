@@ -39,7 +39,6 @@ export default {
           .map((id) => id.trim())
           .filter(Boolean);
         if (allowed.length > 0 && !allowed.includes(String(userId))) {
-          // Send unauthorized notice if a direct user attempts access
           await sendTelegramMessage(
             env.TELEGRAM_BOT_TOKEN,
             chatId,
@@ -116,7 +115,6 @@ export default {
       return new Response("OK", { status: 200 });
     } catch (err) {
       console.error("Worker Execution Error:", err);
-      // Always return 200 to prevent Telegram from spamming retry requests on unhandled errors
       return new Response("OK", { status: 200 });
     }
   },

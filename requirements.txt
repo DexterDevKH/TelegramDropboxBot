@@ -7,3 +7,6 @@ dropbox>=11.36.2
 
 # HTTP Client for Bot API Direct Clipboard Actions
 requests>=2.31.0
+
+# Environment Variable Management
+python-dotenv>=1.0.0
