@@ -1,4 +1,4 @@
-name = "tg-dropbox-sync"
+name = "telegramdropboxbot"
 main = "webhook/worker.js"
 compatibility_date = "2024-01-01"
 

@@ -1,5 +1,5 @@
 {
-  "name": "tg-dropbox-sync",
+  "name": "telegramdropboxbot",
   "version": "1.0.0",
   "private": true,
   "description": "Telegram to Dropbox Serverless Sync Trigger",
@@ -8,6 +8,6 @@
     "deploy": "wrangler deploy"
   },
   "devDependencies": {
-    "wrangler": "^3.80.0"
+    "wrangler": "^4.0.0"
   }
 }
