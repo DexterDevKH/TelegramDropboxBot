@@ -33,14 +33,6 @@ on:
   # Scheduled 24/7 daemon loop disabled in favor of on-demand serverless webhook dispatch
   # schedule:
   #   - cron: '0 */6 * * *'
-  push:
-    branches:
-      - main
-    paths-ignore:
-      - 'README.md'
-      - '.gitignore'
-      - 'docs/**'
-      - 'webhook/**'
 
 concurrency:
   group: tg-dropbox-sync-${{ github.event.client_payload.message_id || github.run_id }}
