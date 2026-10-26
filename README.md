@@ -105,15 +105,13 @@ The repository includes two complementary workflows:
 
 ---
 
-## ⚡ Serverless & Docker Mode (Zero 24/7 Waste)
+## ⚡ 100% Serverless Cloud Mode (Cloudflare + GitHub Actions)
 
-Instead of keeping GitHub Actions or a VM running continuously, you can run the bot in **on-demand serverless mode**:
-- **Docker Webhook Dispatcher**: A micro-service in `webhook/` intercepts incoming Telegram files, sends instant status feedback to the user, and triggers GitHub Actions via `repository_dispatch`.
-- **Zero Idle Minutes**: The GitHub Actions runner only spins up when a file is sent, uploads it to Dropbox, and terminates.
-- **2 GB File Support**: Preserves full Telethon MTProto capabilities for files up to 2 GB.
-- **Docker Compose**: Launch in one command with `docker compose up -d webhook`.
+The sync engine runs entirely on-demand without keeping any servers or continuous processes alive:
+- **Cloudflare Worker (`webhook/worker.js`)**: Free serverless gateway that receives Telegram webhooks instantly, sends live feedback to the user, and triggers GitHub Actions via `repository_dispatch`.
+- **On-Demand GitHub Runner (`bot.py`)**: Boots on Ubuntu only when a file is sent, downloads files up to **2 GB** via Telethon MTProto, uploads to Dropbox, and terminates immediately upon completion (0 idle minutes wasted).
+- **Single In-Place Live Message**: The initial notice transforms in-place into live download progress, upload streaming, and the completion card with native 1-Tap Copy buttons.
 
-👉 **[See Complete Serverless & Docker Documentation](file:///c:/Users/Dexter/Documents/GitHub/TelegramDropboxBot/webhook/README.md)**
 
 
 ---
