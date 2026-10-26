@@ -880,6 +880,9 @@ if __name__ == "__main__":
 
         if is_valid_chat and is_valid_msg:
             asyncio.run(run_on_demand(int(target_chat), int(target_msg)))
+        elif os.getenv("GITHUB_ACTIONS") == "true":
+            logger.info("GitHub Actions triggered without target payload. Exiting cleanly (daemon mode disabled in CI).")
+            sys.exit(0)
         else:
             asyncio.run(run_daemon())
     except (KeyboardInterrupt, SystemExit):
