@@ -88,9 +88,30 @@ def delete_webhook(bot_token: str) -> bool:
             return True
         else:
             print(f"❌ Failed to remove webhook: {res.get('description')}")
-            return False
     except Exception as exc:
         print(f"❌ Network error while deleting webhook: {exc}")
+        return False
+
+def set_bot_commands(bot_token: str) -> bool:
+    url = f"https://api.telegram.org/bot{bot_token}/setMyCommands"
+    commands = [
+        {"command": "start", "description": "Display bot welcome and transfer guide"},
+        {"command": "status", "description": "Inspect serverless cloud pipeline health"},
+        {"command": "ping", "description": "Measure Cloudflare Edge network latency"},
+        {"command": "help", "description": "Show operational manual and limits"}
+    ]
+    print("📋 Registering Telegram interactive menu commands...")
+    try:
+        resp = requests.post(url, json={"commands": commands}, timeout=10)
+        res = resp.json()
+        if res.get("ok"):
+            print("✅ Telegram Menu Commands registered successfully!")
+            return True
+        else:
+            print(f"❌ Failed to set commands: {res.get('description')}")
+            return False
+    except Exception as exc:
+        print(f"❌ Network error while setting commands: {exc}")
         return False
 
 def check_github_repo(repo: str, pat: str) -> dict:
@@ -144,6 +165,7 @@ def trigger_test_dispatch(repo: str, pat: str) -> bool:
 def main():
     parser = argparse.ArgumentParser(description="Configure and verify Telegram Webhook and GitHub Actions.")
     parser.add_argument("--set-url", metavar="URL", help="Set webhook endpoint URL (e.g. https://your-server.com/webhook or Cloudflare Worker URL)")
+    parser.add_argument("--set-commands", action="store_true", help="Register Telegram interactive menu commands (/start, /status, /ping, /help)")
     parser.add_argument("--secret", metavar="TOKEN", help="Optional secret token for verification (X-Telegram-Bot-Api-Secret-Token)")
     parser.add_argument("--info", action="store_true", help="Display current Telegram webhook status")
     parser.add_argument("--delete", action="store_true", help="Delete active Telegram webhook")
@@ -168,6 +190,16 @@ def main():
             print("❌ Error: Missing TELEGRAM_BOT_TOKEN.")
             sys.exit(1)
         success = set_webhook(bot_token, args.set_url.strip(), secret_token)
+        if success:
+            set_bot_commands(bot_token)
+        sys.exit(0 if success else 1)
+
+    # Handle Set Commands Only
+    if args.set_commands:
+        if not bot_token:
+            print("❌ Error: Missing TELEGRAM_BOT_TOKEN.")
+            sys.exit(1)
+        success = set_bot_commands(bot_token)
         sys.exit(0 if success else 1)
 
     # Handle Delete Webhook

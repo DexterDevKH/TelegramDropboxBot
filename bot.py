@@ -219,6 +219,15 @@ def apply_native_copy_buttons(chat_id: int, message_id: int, shared_url: str) ->
     When tapped, the Telegram app directly copies shared_url into the OS clipboard.
     No extra messages or callback spinners are produced.
     """
+    # Format true direct binary download URL (dl=1) for OS clipboard copy
+    web_url = shared_url
+    if "?dl=0" in shared_url:
+        direct_url = shared_url.replace("?dl=0", "?dl=1")
+    elif "&dl=0" in shared_url:
+        direct_url = shared_url.replace("&dl=0", "&dl=1")
+    else:
+        direct_url = shared_url + ("&dl=1" if "?" in shared_url else "?dl=1")
+
     api_endpoint = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/editMessageReplyMarkup"
     payload = {
         "chat_id": chat_id,
@@ -229,12 +238,12 @@ def apply_native_copy_buttons(chat_id: int, message_id: int, shared_url: str) ->
                     {
                         "text": "📋 Copy Direct Link",
                         "copy_text": {
-                            "text": shared_url
+                            "text": direct_url
                         }
                     },
                     {
                         "text": "🌐 Open in Dropbox",
-                        "url": shared_url
+                        "url": web_url
                     }
                 ]
             ]

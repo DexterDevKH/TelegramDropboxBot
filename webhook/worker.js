@@ -93,6 +93,21 @@ export default {
           );
           return new Response("OK", { status: 200 });
         }
+        if (cmd === "/status" || cmd === "/info") {
+          await sendTelegramMessage(
+            env.TELEGRAM_BOT_TOKEN,
+            chatId,
+            messageId,
+            "📊 **SYSTEM STATUS MONITOR**\n──────────────────────────────\n" +
+            "🟢 **Gateway:** `Cloudflare Global Edge (Operational)`\n" +
+            "🛰️ **Pipeline Mode:** `100% Serverless On-Demand`\n" +
+            "⚡ **Runner State:** `Standing By (0s idle usage)`\n" +
+            "📦 **Payload Limit:** `Up to 2,000 MB (2.0 GB)`\n" +
+            "──────────────────────────────\n" +
+            "💡 *Upload any media file to automatically engage cloud sync.*"
+          );
+          return new Response("OK", { status: 200 });
+        }
         if (cmd === "/start" || cmd === "/help") {
           await sendTelegramMessage(
             env.TELEGRAM_BOT_TOKEN,
