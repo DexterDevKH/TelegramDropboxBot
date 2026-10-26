@@ -1,0 +1,13 @@
+{
+  "name": "tg-dropbox-sync",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Telegram to Dropbox Serverless Sync Trigger",
+  "main": "webhook/worker.js",
+  "scripts": {
+    "deploy": "wrangler deploy"
+  },
+  "devDependencies": {
+    "wrangler": "^3.80.0"
+  }
+}
