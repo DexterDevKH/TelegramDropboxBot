@@ -1,0 +1,16 @@
+name = "telegramdropboxbot"
+main = "webhook/worker.js"
+compatibility_date = "2024-01-01"
+
+[vars]
+GH_REPO = "DexterDevKH/TelegramDropboxBot"
+
+[observability]
+enabled = true
+
+[observability.logs]
+enabled = true
+
+[triggers]
+crons = ["* * * * *"]
+

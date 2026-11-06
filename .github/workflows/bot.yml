@@ -1,0 +1,202 @@
+name: Telegram to Dropbox Sync Pipeline
+
+on:
+  repository_dispatch:
+    types: [telegram_sync, track_build]
+  workflow_dispatch:
+    inputs:
+      retention_cap:
+        description: 'Dropbox folder FIFO retention cap (number of files)'
+        required: false
+        default: '2'
+      privacy_mode:
+        description: 'Mask filenames, user IDs, and cloud paths in workflow logs'
+        required: false
+        default: 'true'
+        type: choice
+        options:
+          - 'true'
+          - 'false'
+      log_level:
+        description: 'Logging verbosity level'
+        required: false
+        default: 'INFO'
+        type: choice
+        options:
+          - 'INFO'
+          - 'DEBUG'
+          - 'WARNING'
+
+concurrency:
+  group: tg-dropbox-sync-${{ github.event.client_payload.message_id || github.run_id }}
+  cancel-in-progress: false
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  sync-service:
+    name: Run Cloud Sync Engine
+    runs-on: ubuntu-latest
+    timeout-minutes: 355
+
+    steps:
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+
+      - name: Initialize Python 3.11 Runtime
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Setup uv (Ultra-Fast Package Manager)
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Install Production Dependencies
+        run: |
+          echo "::group::📦 Installing Dependencies (High-Speed Engine)"
+          uv pip install --system -r requirements.txt || pip install -r requirements.txt
+          echo "::endgroup::"
+
+      - name: Pre-Flight Secrets & Privacy Shield Audit
+        shell: bash
+        env:
+          TG_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TG_API_ID: ${{ secrets.TELEGRAM_API_ID }}
+          TG_API_HASH: ${{ secrets.TELEGRAM_API_HASH }}
+          DBX_KEY: ${{ secrets.DROPBOX_APP_KEY }}
+          DBX_SECRET: ${{ secrets.DROPBOX_APP_SECRET }}
+          DBX_REFRESH: ${{ secrets.DROPBOX_REFRESH_TOKEN }}
+          DBX_ACCESS: ${{ secrets.DROPBOX_ACCESS_TOKEN }}
+          DBX_FOLDER: ${{ secrets.DROPBOX_TARGET_FOLDER }}
+          AUTH_IDS: ${{ secrets.AUTHORIZED_USER_IDS }}
+        run: |
+          echo "::group::🔍 Auditing Secrets & Registering Privacy Masks"
+
+          # Dynamically register masks for all custom sensitive parameters
+          if [ -n "$DBX_FOLDER" ]; then
+            echo "::add-mask::$DBX_FOLDER"
+          fi
+          if [ -n "$TG_API_ID" ]; then
+            echo "::add-mask::$TG_API_ID"
+          fi
+          if [ -n "$AUTH_IDS" ]; then
+            echo "::add-mask::$AUTH_IDS"
+            IFS=',' read -ra ADDR <<< "$AUTH_IDS"
+            for id in "${ADDR[@]}"; do
+              trimmed=$(echo "$id" | xargs)
+              if [ -n "$trimmed" ]; then
+                echo "::add-mask::$trimmed"
+              fi
+            done
+          fi
+
+          MISSING=0
+          check_secret() {
+            NAME="$1"
+            VAL="$2"
+            if [ -z "$VAL" ]; then
+              echo "::error::Missing required GitHub Secret: $NAME"
+              MISSING=1
+            else
+              echo "  ✔ Secret verified: $NAME"
+            fi
+          }
+
+          check_secret "TELEGRAM_BOT_TOKEN" "$TG_BOT_TOKEN"
+          check_secret "TELEGRAM_API_ID" "$TG_API_ID"
+          check_secret "TELEGRAM_API_HASH" "$TG_API_HASH"
+
+          if [ "${{ github.event.action }}" != "track_build" ]; then
+            if [ -z "$DBX_REFRESH" ] && [ -z "$DBX_ACCESS" ]; then
+              echo "::error::Missing Dropbox Token: Either DROPBOX_REFRESH_TOKEN or DROPBOX_ACCESS_TOKEN must be configured."
+              MISSING=1
+            else
+              echo "  ✔ Dropbox authentication token verified"
+            fi
+          fi
+
+          if [ "$MISSING" -eq 1 ]; then
+            echo ""
+            echo "❌ Pre-flight check failed! Please configure missing secrets in: Repository Settings ➔ Secrets and variables ➔ Actions"
+            exit 1
+          fi
+          echo "✅ All required authentication credentials verified."
+          echo "🛡️ Privacy masks registered successfully."
+          echo "::endgroup::"
+
+      - name: Publish Pipeline Deployment Summary
+        shell: bash
+        run: |
+          cat << 'EOF' >> $GITHUB_STEP_SUMMARY
+          # ⚡ Telegram to Dropbox Sync Pipeline (v3.0.0)
+
+          ### 🛰️ Runner Specifications & Status
+          | Property | Value |
+          | :--- | :--- |
+          | **Host Platform** | Ubuntu Linux (`ubuntu-latest`) |
+          | **Package Manager** | `uv` (Ultra-fast Rust package engine) + Python 3.11 |
+          | **Trigger Source** | `${{ github.event_name }}` |
+          | **Concurrency Policy** | Queue per message (`cancel-in-progress: false`) |
+          | **Privacy Shield** | 🛡️ Active (Filenames & user identities masked) |
+
+          ### ⚙️ Engine Parameters
+          | Parameter | Configured Value | Description |
+          | :--- | :--- | :--- |
+          | **Target Vault** | `[CONFIGURED IN SECRETS]` | Destination Dropbox folder (masked) |
+          | **Retention Cap** | `${{ github.event.inputs.retention_cap || '2' }} files` | FIFO auto-rotation policy |
+          | **Chunk Size** | `8 MB` | Streaming session upload chunk size |
+          | **Direct Copy API** | `Telegram Bot API v7.0+` | Native one-tap clipboard copy buttons |
+
+          > 💡 **Active Service:** The MTProto engine is now executing ingestion and streaming chunked upload to Dropbox.
+          EOF
+
+      - name: Launch Cloud Sync / Build Tracker Daemon
+        env:
+          PYTHONUNBUFFERED: "1"
+          PRIVACY_MODE: ${{ github.event.inputs.privacy_mode || 'true' }}
+          EVENT_ACTION: ${{ github.event.action }}
+          TARGET_CHAT_ID: ${{ github.event.client_payload.chat_id }}
+          TARGET_MESSAGE_ID: ${{ github.event.client_payload.message_id }}
+          DISPATCH_MESSAGE_ID: ${{ github.event.client_payload.dispatch_message_id }}
+          BUILD_TARGET_KEY: ${{ github.event.client_payload.target_key }}
+          BUILD_RUN_ID: ${{ github.event.client_payload.run_id }}
+          BUILD_START_TIME: ${{ github.event.client_payload.start_time }}
+          IDLE_KEEP_ALIVE_SECONDS: "0"
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_API_ID: ${{ secrets.TELEGRAM_API_ID }}
+          TELEGRAM_API_HASH: ${{ secrets.TELEGRAM_API_HASH }}
+          DROPBOX_APP_KEY: ${{ secrets.DROPBOX_APP_KEY }}
+          DROPBOX_APP_SECRET: ${{ secrets.DROPBOX_APP_SECRET }}
+          DROPBOX_REFRESH_TOKEN: ${{ secrets.DROPBOX_REFRESH_TOKEN }}
+          DROPBOX_ACCESS_TOKEN: ${{ secrets.DROPBOX_ACCESS_TOKEN }}
+          AUTHORIZED_USER_IDS: ${{ secrets.AUTHORIZED_USER_IDS }}
+          DROPBOX_TARGET_FOLDER: ${{ secrets.DROPBOX_TARGET_FOLDER || '/Telegram Uploads' }}
+          MAX_FILES_IN_FOLDER: ${{ github.event.inputs.retention_cap || secrets.MAX_FILES_IN_FOLDER || '2' }}
+          CHUNK_SIZE_MB: "8"
+          LOG_LEVEL: ${{ github.event.inputs.log_level || 'INFO' }}
+          GH_PAT: ${{ secrets.GH_PAT || secrets.PAT || secrets.GITHUB_TOKEN }}
+        run: |
+          python bot.py
+
+      - name: Auto-Purge Completed Workflow Runs
+        if: always()
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          GH_NO_PROMPT: "1"
+        run: |
+          echo "::group::🧹 Auto-Purging Completed Sync Pipeline Run Logs"
+          gh run list --repo "${{ github.repository }}" --workflow=bot.yml --status=completed --json databaseId -q '.[].databaseId' | while read -r run_id; do
+            if [ -n "$run_id" ]; then
+              echo "Purging completed run: $run_id"
+              gh api -X DELETE "repos/${{ github.repository }}/actions/runs/$run_id" || true
+            fi
+          done
+          echo "✔ Complete: All completed run logs and history have been purged."
+          echo "::endgroup::"

@@ -1,0 +1,12 @@
+# Telegram MTProto Client & Fast Cryptography Acceleration
+telethon>=1.36.0
+cryptg>=0.4.0
+
+# Dropbox Cloud Storage SDK
+dropbox>=11.36.2
+
+# HTTP Client for Bot API Direct Clipboard Actions & GitHub REST API
+requests>=2.31.0
+
+# Environment Variable Management
+python-dotenv>=1.0.0
