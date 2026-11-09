@@ -39,11 +39,13 @@ class AppConfig:
     dropbox_app_secret: Optional[str] = None
     dropbox_refresh_token: Optional[str] = None
     dropbox_access_token: Optional[str] = None
-    dropbox_target_folder: str = "/IPA"
+    dropbox_ipa_folder: str = "/IPA"
+    dropbox_deb_folder: str = "/DEB"
 
     # Access control & limits
     authorized_user_ids: Set[int] = field(default_factory=set)
     max_files_in_folder: int = 2
+    max_files_in_deb_folder: Optional[int] = None
     chunk_size_mb: int = 8
     privacy_mode: bool = True
     log_level: str = "INFO"
@@ -83,6 +85,24 @@ class AppConfig:
             or self.dropbox_access_token
         )
 
+    @property
+    def dropbox_target_folder(self) -> str:
+        """Backward-compatible alias for dropbox_ipa_folder."""
+        return self.dropbox_ipa_folder
+
+    def get_max_files_for_folder(self, folder_path: str) -> int:
+        """Returns the retention file cap for a given folder path."""
+        norm = (folder_path or "").strip().rstrip("/")
+        if not norm.startswith("/"):
+            norm = "/" + norm
+        deb_norm = self.dropbox_deb_folder.strip().rstrip("/")
+        if not deb_norm.startswith("/"):
+            deb_norm = "/" + deb_norm
+
+        if norm.lower() == deb_norm.lower() and self.max_files_in_deb_folder is not None:
+            return self.max_files_in_deb_folder
+        return self.max_files_in_folder
+
 
 def load_config() -> AppConfig:
     """Parses environment variables and validates critical settings."""
@@ -104,9 +124,21 @@ def load_config() -> AppConfig:
         print("CRITICAL CONFIG ERROR: TELEGRAM_API_ID must be a valid integer.", file=sys.stderr)
         sys.exit(1)
 
-    target_folder = os.getenv("DROPBOX_TARGET_FOLDER", "/IPA").strip()
-    if not target_folder.startswith("/"):
-        target_folder = "/" + target_folder
+    ipa_folder = (
+        os.getenv("DROPBOX_IPA_FOLDER")
+        or os.getenv("DROPBOX_TARGET_FOLDER")
+        or "/IPA"
+    ).strip()
+    if not ipa_folder.startswith("/"):
+        ipa_folder = "/" + ipa_folder
+
+    deb_folder = os.getenv("DROPBOX_DEB_FOLDER", "/DEB").strip()
+    if not deb_folder.startswith("/"):
+        deb_folder = "/" + deb_folder
+
+    max_files_global = int(os.getenv("MAX_FILES_IN_FOLDER", "2"))
+    max_files_deb_raw = os.getenv("MAX_FILES_IN_DEB_FOLDER", "").strip()
+    max_files_deb = int(max_files_deb_raw) if max_files_deb_raw.isdigit() else None
 
     # Parse Authorized User IDs
     authorized_raw = os.getenv("AUTHORIZED_USER_IDS", "").strip()
@@ -155,9 +187,11 @@ def load_config() -> AppConfig:
         dropbox_app_secret=os.getenv("DROPBOX_APP_SECRET", "").strip() or None,
         dropbox_refresh_token=os.getenv("DROPBOX_REFRESH_TOKEN", "").strip() or None,
         dropbox_access_token=os.getenv("DROPBOX_ACCESS_TOKEN", "").strip() or None,
-        dropbox_target_folder=target_folder,
+        dropbox_ipa_folder=ipa_folder,
+        dropbox_deb_folder=deb_folder,
         authorized_user_ids=authorized_ids,
-        max_files_in_folder=int(os.getenv("MAX_FILES_IN_FOLDER", "2")),
+        max_files_in_folder=max_files_global,
+        max_files_in_deb_folder=max_files_deb,
         chunk_size_mb=int(os.getenv("CHUNK_SIZE_MB", "8")),
         privacy_mode=privacy,
         log_level=log_level,

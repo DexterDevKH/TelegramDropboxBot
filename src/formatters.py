@@ -275,25 +275,26 @@ def extract_single_file_from_zip(
         return None
 
 def resolve_dropbox_destination(
-    filename: str, configured_folder: str = "/IPA"
+    filename: str, ipa_folder: str = "/IPA", deb_folder: str = "/DEB"
 ) -> Tuple[str, str, str]:
     """
     Determines Dropbox destination path, retention folder, and presentation vault display.
     Rule:
-      - If .ipa file: uploads into configured folder (e.g. /IPA/app.ipa).
-      - If NOT .ipa: uploads outside the folder to Dropbox root (e.g. /tweak.deb).
+      - If .ipa file: uploads into ipa_folder (e.g. /IPA/app.ipa).
+      - If NOT .ipa (e.g. .deb): uploads into deb_folder (e.g. /DEB/tweak.deb).
     Returns: (dropbox_target_path, retention_folder, vault_display)
     """
     is_ipa = filename.lower().endswith(".ipa")
     if is_ipa:
-        folder = (configured_folder or "/IPA").strip().rstrip("/")
+        folder = (ipa_folder or "/IPA").strip().rstrip("/")
         if not folder.startswith("/"):
             folder = "/" + folder
-        dest_path = f"{folder}/{filename}"
-        retention_folder = folder
-        vault_display = folder
     else:
-        dest_path = f"/{filename}"
-        retention_folder = ""  # Root is protected from retention pruning
-        vault_display = "/ (Root)"
+        folder = (deb_folder or "/DEB").strip().rstrip("/")
+        if not folder.startswith("/"):
+            folder = "/" + folder
+
+    dest_path = f"{folder}/{filename}"
+    retention_folder = folder
+    vault_display = folder
     return dest_path, retention_folder, vault_display

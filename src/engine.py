@@ -259,7 +259,9 @@ class SyncApp:
 
             # Phase 2: Chunked Upload to Dropbox
             dropbox_target_path, retention_folder, vault_display = resolve_dropbox_destination(
-                final_filename, self.config.dropbox_target_folder
+                final_filename,
+                ipa_folder=self.config.dropbox_ipa_folder,
+                deb_folder=self.config.dropbox_deb_folder,
             )
             loop = asyncio.get_running_loop()
             upload_start_time = time.time()
@@ -324,8 +326,9 @@ class SyncApp:
 
             if pruned_items:
                 pruned_str = ", ".join([f"`{name}`" for name in pruned_items])
+                cap = self.config.get_max_files_for_folder(retention_folder)
                 completion_card += (
-                    f"\n♻️ **Retention Auto-Rotation (Cap: {self.config.max_files_in_folder})**\n"
+                    f"\n♻️ **Retention Auto-Rotation (Cap: {cap} in `{vault_display}`)**\n"
                     f"• Pruned oldest: {pruned_str}\n"
                 )
 
@@ -584,7 +587,9 @@ class SyncApp:
 
             # Phase 2: Chunked Upload to Dropbox
             dropbox_target_path, retention_folder, vault_display = resolve_dropbox_destination(
-                final_filename, self.config.dropbox_target_folder
+                final_filename,
+                ipa_folder=self.config.dropbox_ipa_folder,
+                deb_folder=self.config.dropbox_deb_folder,
             )
             upload_start_time = time.time()
             last_ul_update_ts = [0.0]
@@ -653,8 +658,9 @@ class SyncApp:
 
             if pruned_items:
                 pruned_str = ", ".join([f"`{name}`" for name in pruned_items])
+                cap = self.config.get_max_files_for_folder(retention_folder)
                 completion_card += (
-                    f"\n♻️ **Retention Auto-Rotation (Cap: {self.config.max_files_in_folder})**\n"
+                    f"\n♻️ **Retention Auto-Rotation (Cap: {cap} in `{vault_display}`)**\n"
                     f"• Pruned oldest: {pruned_str}\n"
                 )
 
@@ -1237,13 +1243,15 @@ class SyncApp:
             # 6. Command: /status, /info
             if raw_text in ["/status", "/info"]:
                 elapsed = int(time.time() - self.start_timestamp)
+                deb_cap_str = f" (DEB: {self.config.max_files_in_deb_folder})" if self.config.max_files_in_deb_folder else ""
                 status_card = (
                     "📊 **SYSTEM & CLOUD HEALTH MONITOR**\n"
                     "──────────────────────────────\n"
                     "🟢 **Daemon State:** `Online & Operational`\n"
                     f"⏱️ **Session Uptime:** `{format_eta(elapsed)}`\n"
-                    f"📁 **Dropbox Target:** `{self.config.dropbox_target_folder}`\n"
-                    f"📦 **Retention Cap:** `{self.config.max_files_in_folder} files max`\n"
+                    f"📁 **IPA Vault:** `{self.config.dropbox_ipa_folder}`\n"
+                    f"📁 **DEB Vault:** `{self.config.dropbox_deb_folder}`\n"
+                    f"📦 **Retention Cap:** `{self.config.max_files_in_folder} files max / folder{deb_cap_str}`\n"
                     f"🚀 **Workflow Builder:** Active (`/build`)\n"
                     f"📈 **Transfers Completed:** `{self.session_transfers_count} files` (`{format_size(self.session_transfers_bytes)}`)"
                 )
@@ -1305,14 +1313,16 @@ class SyncApp:
 
         bot_display = "@[PROTECTED]" if self.config.privacy_mode else f"@{self.tg.bot_username}"
         dbx_display = "[PROTECTED/MASKED]" if self.config.privacy_mode else self.dbx.account_name
-        folder_display = "[PROTECTED_VAULT]" if self.config.privacy_mode else self.config.dropbox_target_folder
+        ipa_display = "[PROTECTED_VAULT]" if self.config.privacy_mode else self.config.dropbox_ipa_folder
+        deb_display = "[PROTECTED_VAULT]" if self.config.privacy_mode else self.config.dropbox_deb_folder
 
         logger.info("┌" + "─" * 68 + "┐")
         logger.info("│ ⚡ ON-DEMAND DISPATCH ENGINE (SERVERLESS RUNNER)                │")
         logger.info("├" + "─" * 68 + "┤")
         logger.info(f"│ • Telegram Bot:      {bot_display:<46} │")
         logger.info(f"│ • Dropbox Account:   {dbx_display:<46} │")
-        logger.info(f"│ • Target Directory:  {folder_display:<46} │")
+        logger.info(f"│ • IPA Directory:     {ipa_display:<46} │")
+        logger.info(f"│ • DEB Directory:     {deb_display:<46} │")
         logger.info(f"│ • Target Chat ID:    {str(chat_id):<46} │")
         logger.info(f"│ • Target Message ID: {str(message_id):<46} │")
         logger.info("└" + "─" * 68 + "┘")
@@ -1385,8 +1395,9 @@ class SyncApp:
         logger.info("│ ⚡ STANDALONE DAEMON MODE (LOCAL / PERSISTENT)                   │")
         logger.info("├" + "─" * 68 + "┤")
         logger.info(f"│ • Telegram Bot:      @{self.tg.bot_username:<45} │")
-        logger.info(f"│ • Dropbox Folder:    {self.config.dropbox_target_folder:<46} │")
-        logger.info(f"│ • Retention Cap:     {self.config.max_files_in_folder} files maximum{' ':<31} │")
+        logger.info(f"│ • IPA Folder:        {self.config.dropbox_ipa_folder:<46} │")
+        logger.info(f"│ • DEB Folder:        {self.config.dropbox_deb_folder:<46} │")
+        logger.info(f"│ • Retention Cap:     {self.config.max_files_in_folder} files max / folder{' ':<22} │")
         logger.info(f"│ • Workflow Builder:  Active (/build){' ':<33} │")
         logger.info("└" + "─" * 68 + "┘")
 

@@ -181,20 +181,26 @@ class TestFormatters(unittest.TestCase):
         dest_ipa_upper, _, _ = resolve_dropbox_destination("YouTube.IPA", "/IPA")
         self.assertEqual(dest_ipa_upper, "/IPA/YouTube.IPA")
 
-        # Non-ipa files (deb, pdf, mp4, etc.) go outside the folder to root /
-        dest_deb, ret_deb, vault_deb = resolve_dropbox_destination("YTKACE-deb-rootless.deb", "/IPA")
-        self.assertEqual(dest_deb, "/YTKACE-deb-rootless.deb")
-        self.assertEqual(ret_deb, "")  # Root is protected from retention pruning
-        self.assertEqual(vault_deb, "/ (Root)")
+        # Non-ipa files (deb, pdf, mp4, etc.) go to deb_folder (/DEB by default)
+        dest_deb, ret_deb, vault_deb = resolve_dropbox_destination("YTKACE-deb-rootless.deb", "/IPA", "/DEB")
+        self.assertEqual(dest_deb, "/DEB/YTKACE-deb-rootless.deb")
+        self.assertEqual(ret_deb, "/DEB")
+        self.assertEqual(vault_deb, "/DEB")
 
-        dest_pdf, ret_pdf, vault_pdf = resolve_dropbox_destination("document.pdf", "/IPA")
-        self.assertEqual(dest_pdf, "/document.pdf")
-        self.assertEqual(ret_pdf, "")
-        self.assertEqual(vault_pdf, "/ (Root)")
+        dest_pdf, ret_pdf, vault_pdf = resolve_dropbox_destination("document.pdf", "/IPA", "/DEB")
+        self.assertEqual(dest_pdf, "/DEB/document.pdf")
+        self.assertEqual(ret_pdf, "/DEB")
+        self.assertEqual(vault_pdf, "/DEB")
 
-        dest_zip, ret_zip, vault_zip = resolve_dropbox_destination("archive.zip", "/IPA")
-        self.assertEqual(dest_zip, "/archive.zip")
-        self.assertEqual(ret_zip, "")
+        dest_zip, ret_zip, vault_zip = resolve_dropbox_destination("archive.zip", "/IPA", "/DEB")
+        self.assertEqual(dest_zip, "/DEB/archive.zip")
+        self.assertEqual(ret_zip, "/DEB")
+
+        # Custom folders with or without leading slash
+        dest_custom, ret_custom, vault_custom = resolve_dropbox_destination("tweak.deb", "CustomIPA", "CustomDEB")
+        self.assertEqual(dest_custom, "/CustomDEB/tweak.deb")
+        self.assertEqual(ret_custom, "/CustomDEB")
+        self.assertEqual(vault_custom, "/CustomDEB")
 
 if __name__ == "__main__":
     unittest.main()

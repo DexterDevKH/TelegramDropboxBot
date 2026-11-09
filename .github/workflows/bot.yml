@@ -72,14 +72,18 @@ jobs:
           DBX_SECRET: ${{ secrets.DROPBOX_APP_SECRET }}
           DBX_REFRESH: ${{ secrets.DROPBOX_REFRESH_TOKEN }}
           DBX_ACCESS: ${{ secrets.DROPBOX_ACCESS_TOKEN }}
-          DBX_FOLDER: ${{ secrets.DROPBOX_TARGET_FOLDER }}
+          DBX_IPA_FOLDER: ${{ secrets.DROPBOX_IPA_FOLDER || secrets.DROPBOX_TARGET_FOLDER }}
+          DBX_DEB_FOLDER: ${{ secrets.DROPBOX_DEB_FOLDER }}
           AUTH_IDS: ${{ secrets.AUTHORIZED_USER_IDS }}
         run: |
           echo "::group::🔍 Auditing Secrets & Registering Privacy Masks"
 
           # Dynamically register masks for all custom sensitive parameters
-          if [ -n "$DBX_FOLDER" ]; then
-            echo "::add-mask::$DBX_FOLDER"
+          if [ -n "$DBX_IPA_FOLDER" ]; then
+            echo "::add-mask::$DBX_IPA_FOLDER"
+          fi
+          if [ -n "$DBX_DEB_FOLDER" ]; then
+            echo "::add-mask::$DBX_DEB_FOLDER"
           fi
           if [ -n "$TG_API_ID" ]; then
             echo "::add-mask::$TG_API_ID"
@@ -147,8 +151,9 @@ jobs:
           ### ⚙️ Engine Parameters
           | Parameter | Configured Value | Description |
           | :--- | :--- | :--- |
-          | **Target Vault** | `[CONFIGURED IN SECRETS]` | Destination Dropbox folder (masked) |
-          | **Retention Cap** | `${{ github.event.inputs.retention_cap || '2' }} files` | FIFO auto-rotation policy |
+          | **IPA Vault** | `[CONFIGURED IN SECRETS]` | Destination Dropbox folder for IPAs (masked) |
+          | **DEB Vault** | `[CONFIGURED IN SECRETS]` | Destination Dropbox folder for DEBs (masked) |
+          | **Retention Cap** | `${{ github.event.inputs.retention_cap || '2' }} files` | FIFO auto-rotation policy per folder |
           | **Chunk Size** | `8 MB` | Streaming session upload chunk size |
           | **Direct Copy API** | `Telegram Bot API v7.0+` | Native one-tap clipboard copy buttons |
 
@@ -181,8 +186,11 @@ jobs:
           DROPBOX_REFRESH_TOKEN: ${{ secrets.DROPBOX_REFRESH_TOKEN }}
           DROPBOX_ACCESS_TOKEN: ${{ secrets.DROPBOX_ACCESS_TOKEN }}
           AUTHORIZED_USER_IDS: ${{ secrets.AUTHORIZED_USER_IDS }}
-          DROPBOX_TARGET_FOLDER: ${{ secrets.DROPBOX_TARGET_FOLDER || '/IPA' }}
+          DROPBOX_IPA_FOLDER: ${{ secrets.DROPBOX_IPA_FOLDER || secrets.DROPBOX_TARGET_FOLDER || '/IPA' }}
+          DROPBOX_TARGET_FOLDER: ${{ secrets.DROPBOX_IPA_FOLDER || secrets.DROPBOX_TARGET_FOLDER || '/IPA' }}
+          DROPBOX_DEB_FOLDER: ${{ secrets.DROPBOX_DEB_FOLDER || '/DEB' }}
           MAX_FILES_IN_FOLDER: ${{ github.event.inputs.retention_cap || secrets.MAX_FILES_IN_FOLDER || '2' }}
+          MAX_FILES_IN_DEB_FOLDER: ${{ secrets.MAX_FILES_IN_DEB_FOLDER }}
           CHUNK_SIZE_MB: "8"
           LOG_LEVEL: ${{ github.event.inputs.log_level || 'INFO' }}
           GH_PAT: ${{ secrets.GH_PAT || secrets.PAT || secrets.GITHUB_TOKEN }}

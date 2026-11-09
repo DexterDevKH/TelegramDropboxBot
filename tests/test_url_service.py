@@ -28,6 +28,10 @@ class TestUrlIngestion(unittest.TestCase):
             "ARTIFACT_REPO": "DexterDevKH/ytkace",
             "FILE_NAME": "YTKACE-deb-rootless.zip",
             "FILE_SIZE": "2093699",
+            "DROPBOX_IPA_FOLDER": "/MY_IPA",
+            "DROPBOX_DEB_FOLDER": "/MY_DEB",
+            "MAX_FILES_IN_FOLDER": "3",
+            "MAX_FILES_IN_DEB_FOLDER": "5",
         }
         with patch.dict(os.environ, env_vars, clear=False):
             cfg = load_config()
@@ -37,6 +41,13 @@ class TestUrlIngestion(unittest.TestCase):
             self.assertEqual(cfg.artifact_repo, "DexterDevKH/ytkace")
             self.assertEqual(cfg.file_name, "YTKACE-deb-rootless.zip")
             self.assertEqual(cfg.file_size, 2093699)
+            self.assertEqual(cfg.dropbox_ipa_folder, "/MY_IPA")
+            self.assertEqual(cfg.dropbox_target_folder, "/MY_IPA")
+            self.assertEqual(cfg.dropbox_deb_folder, "/MY_DEB")
+            self.assertEqual(cfg.max_files_in_folder, 3)
+            self.assertEqual(cfg.max_files_in_deb_folder, 5)
+            self.assertEqual(cfg.get_max_files_for_folder("/MY_IPA"), 3)
+            self.assertEqual(cfg.get_max_files_for_folder("/MY_DEB"), 5)
 
     def test_extract_single_file_from_zip(self):
         """Tests that a zip is unzipped and only the file inside is extracted."""

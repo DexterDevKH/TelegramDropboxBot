@@ -4,7 +4,7 @@ Dropbox Cloud Storage Client & Streaming Operations
 
 import os
 import logging
-from typing import Tuple, List, Optional, Callable
+from typing import Tuple, List, Optional, Callable, Dict
 import dropbox
 from dropbox.files import WriteMode, CommitInfo, FileMetadata
 from dropbox.exceptions import ApiError, AuthError, BadInputError, DropboxException
@@ -70,7 +70,7 @@ class DropboxService:
         if not self.client:
             return deleted_files
 
-        if not folder_path or folder_path.strip("/") == "":
+        if not folder_path or folder_path.strip("/") == "" or max_files <= 0:
             return deleted_files
 
         try:
@@ -105,6 +105,20 @@ class DropboxService:
             logger.error(f"Unexpected error during retention enforcement: {exc}")
 
         return deleted_files
+
+    def enforce_all_retention(self) -> Dict[str, List[str]]:
+        """
+        Enforces FIFO retention across all configured vaults (both IPA vault and DEB vault).
+        Returns a mapping of folder path to list of pruned filenames.
+        """
+        results: Dict[str, List[str]] = {}
+        for fld in (self.config.dropbox_ipa_folder, self.config.dropbox_deb_folder):
+            if fld and fld.strip("/") != "":
+                cap = self.config.get_max_files_for_folder(fld)
+                pruned = self.enforce_folder_retention(fld, max_files=cap)
+                if pruned:
+                    results[fld] = pruned
+        return results
 
     def upload_file_chunked(
         self,
@@ -159,10 +173,17 @@ class DropboxService:
         )
         logger.info(f"Successfully committed file to Dropbox: {log_dest}")
 
-        # Enforce FIFO Retention only on configured subfolders (never on root)
+        # Enforce FIFO Retention on target subfolder (IPA or DEB)
         pruned_files: List[str] = []
         if target_folder and target_folder.strip("/") != "":
-            pruned_files = self.enforce_folder_retention(target_folder, max_files=self.config.max_files_in_folder)
+            cap = self.config.get_max_files_for_folder(target_folder)
+            pruned_files = self.enforce_folder_retention(target_folder, max_files=cap)
+
+        # Also verify retention for DEB folder if file was uploaded to another folder
+        deb_folder = self.config.dropbox_deb_folder
+        if deb_folder and deb_folder.strip("/") != "" and deb_folder != target_folder:
+            deb_cap = self.config.get_max_files_for_folder(deb_folder)
+            self.enforce_folder_retention(deb_folder, max_files=deb_cap)
 
         # Generate direct download shared link
         shared_link = ""
