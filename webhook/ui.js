@@ -416,13 +416,38 @@ export function renderPingCard() {
  * Media Transfer Initial Notice Card
  */
 export function renderMediaNoticeCard(fileName, fileSizeFormatted) {
+  const isZip = fileName.toLowerCase().endsWith(".zip");
+  const unzipNote = isZip ? " *(Auto-unzip enabled)*" : "";
+
   return (
     "⚡ **TRANSFER REQUEST RECEIVED**\n" +
     "──────────────────────────────\n" +
-    `📄 **Target:** \`${fileName}\`\n` +
+    `📄 **Target:** \`${fileName}\`${unzipNote}\n` +
     (fileSizeFormatted ? `📦 **Filesize:** \`${fileSizeFormatted}\`\n` : "") +
     "🛰️ **Status:** *Dispatching GitHub Actions cloud runner...*\n" +
-    "⏳ *MTProto ingestion engine will engage shortly.*"
+    "⏳ *MTProto ingestion & auto-unzip engine will engage shortly.*"
+  );
+}
+
+/**
+ * URL / GitHub Artifact Transfer Initial Notice Card
+ */
+export function renderUrlNoticeCard(rawUrl, fileName, fileSizeFormatted, isArtifact = false, artifactRepo = null) {
+  const sourceLine = isArtifact && artifactRepo
+    ? `🔗 **Source:** GitHub Actions Artifact (\`${artifactRepo}\`)\n`
+    : `🔗 **Source:** Remote Web Link\n`;
+
+  const isZip = isArtifact || fileName.toLowerCase().endsWith(".zip");
+  const unzipNote = isZip ? " *(Auto-unzip enabled)*" : "";
+
+  return (
+    "⚡ **URL DOWNLOAD REQUEST RECEIVED**\n" +
+    "──────────────────────────────\n" +
+    sourceLine +
+    `📄 **Target:** \`${fileName}\`${unzipNote}\n` +
+    (fileSizeFormatted ? `📦 **Filesize:** \`${fileSizeFormatted}\`\n` : "") +
+    "🛰️ **Status:** *Dispatching GitHub Actions cloud runner...*\n" +
+    "⏳ *High-speed download, archive extraction & Dropbox push will engage shortly.*"
   );
 }
 

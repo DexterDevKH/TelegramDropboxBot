@@ -160,3 +160,40 @@ export async function getLatestRelease(pat, repo) {
     return null;
   }
 }
+
+/**
+ * Fetches artifact details (name, size, expired status) from GitHub REST API.
+ */
+export async function getArtifactDetails(pat, repo, artifactId) {
+  if (!artifactId) return null;
+  const url = `${GITHUB_API_URL}/repos/${repo}/actions/artifacts/${artifactId}`;
+  try {
+    const res = await fetch(url, {
+      method: "GET",
+      headers: getHeaders(pat),
+    });
+    if (!res.ok) return null;
+    return await res.json();
+  } catch (_) {
+    return null;
+  }
+}
+
+/**
+ * Fetches all artifacts for a specific workflow run.
+ */
+export async function getRunArtifacts(pat, repo, runId) {
+  if (!runId) return [];
+  const url = `${GITHUB_API_URL}/repos/${repo}/actions/runs/${runId}/artifacts`;
+  try {
+    const res = await fetch(url, {
+      method: "GET",
+      headers: getHeaders(pat),
+    });
+    if (!res.ok) return [];
+    const data = await res.json();
+    return Array.isArray(data.artifacts) ? data.artifacts : [];
+  } catch (_) {
+    return [];
+  }
+}

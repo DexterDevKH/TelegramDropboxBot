@@ -166,6 +166,12 @@ jobs:
           BUILD_TARGET_KEY: ${{ github.event.client_payload.target_key }}
           BUILD_RUN_ID: ${{ github.event.client_payload.run_id }}
           BUILD_START_TIME: ${{ github.event.client_payload.start_time }}
+          DOWNLOAD_URL: ${{ github.event.client_payload.download_url }}
+          IS_ARTIFACT: ${{ github.event.client_payload.is_artifact }}
+          ARTIFACT_ID: ${{ github.event.client_payload.artifact_id }}
+          ARTIFACT_REPO: ${{ github.event.client_payload.artifact_repo }}
+          FILE_NAME: ${{ github.event.client_payload.file_name }}
+          FILE_SIZE: ${{ github.event.client_payload.file_size }}
           IDLE_KEEP_ALIVE_SECONDS: "0"
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_API_ID: ${{ secrets.TELEGRAM_API_ID }}

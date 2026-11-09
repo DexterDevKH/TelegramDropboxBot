@@ -13,6 +13,10 @@ from src.formatters import (
     encode_bitmask,
     decode_bitmask,
     SpeedTracker,
+    parse_artifact_url,
+    parse_run_url,
+    parse_content_disposition_filename,
+    extract_filename_from_url,
 )
 
 class TestFormatters(unittest.TestCase):
@@ -96,6 +100,74 @@ class TestFormatters(unittest.TestCase):
         time.sleep(0.05)
         s1 = tracker.update(1024 * 1024)
         self.assertGreater(s1, 0.0)
+
+    def test_parse_artifact_url(self):
+        # User requested link
+        target_url = "https://github.com/DexterDevKH/ytkace/actions/runs/42453711687/artifacts/13606462977"
+        parsed = parse_artifact_url(target_url)
+        self.assertIsNotNone(parsed)
+        self.assertEqual(parsed["owner"], "DexterDevKH")
+        self.assertEqual(parsed["repo"], "ytkace")
+        self.assertEqual(parsed["repo_full_name"], "DexterDevKH/ytkace")
+        self.assertEqual(parsed["artifact_id"], "13606462977")
+
+        # Suite URL
+        suite_url = "https://github.com/owner/repo/suites/98765/artifacts/54321"
+        parsed_suite = parse_artifact_url(suite_url)
+        self.assertIsNotNone(parsed_suite)
+        self.assertEqual(parsed_suite["owner"], "owner")
+        self.assertEqual(parsed_suite["repo"], "repo")
+        self.assertEqual(parsed_suite["artifact_id"], "54321")
+
+        # API URL
+        api_url = "https://api.github.com/repos/owner/repo/actions/artifacts/112233"
+        parsed_api = parse_artifact_url(api_url)
+        self.assertIsNotNone(parsed_api)
+        self.assertEqual(parsed_api["artifact_id"], "112233")
+
+        # Non-artifact URL
+        self.assertIsNone(parse_artifact_url("https://example.com/file.zip"))
+        self.assertIsNone(parse_artifact_url(""))
+
+    def test_parse_run_url(self):
+        run_url = "https://github.com/DexterDevKH/ytkace/actions/runs/42453711687"
+        parsed = parse_run_url(run_url)
+        self.assertIsNotNone(parsed)
+        self.assertEqual(parsed["owner"], "DexterDevKH")
+        self.assertEqual(parsed["repo"], "ytkace")
+        self.assertEqual(parsed["run_id"], "42453711687")
+
+        self.assertIsNone(parse_run_url("https://github.com/DexterDevKH/ytkace"))
+
+    def test_parse_content_disposition(self):
+        self.assertEqual(
+            parse_content_disposition_filename('attachment; filename="YouTube_v20.10.1.ipa"'),
+            "YouTube_v20.10.1.ipa"
+        )
+        self.assertEqual(
+            parse_content_disposition_filename("attachment; filename=tweak.deb"),
+            "tweak.deb"
+        )
+        self.assertEqual(
+            parse_content_disposition_filename("attachment; filename*=UTF-8''my%20app%20v1.ipa"),
+            "my app v1.ipa"
+        )
+        self.assertIsNone(parse_content_disposition_filename(""))
+        self.assertIsNone(parse_content_disposition_filename(None))
+
+    def test_extract_filename_from_url(self):
+        self.assertEqual(
+            extract_filename_from_url("https://example.com/files/MyApp.ipa"),
+            "MyApp.ipa"
+        )
+        self.assertEqual(
+            extract_filename_from_url("https://example.com/downloads/my%20archive.zip?auth=xyz"),
+            "my archive.zip"
+        )
+        self.assertEqual(
+            extract_filename_from_url("https://example.com/"),
+            "downloaded_file.bin"
+        )
 
 if __name__ == "__main__":
     unittest.main()

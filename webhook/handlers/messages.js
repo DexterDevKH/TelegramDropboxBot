@@ -19,6 +19,8 @@ import {
 import {
   triggerWorkflowDispatch,
   dispatchSyncPipeline,
+  getArtifactDetails,
+  getRunArtifacts,
 } from "../github.js";
 import {
   renderMainMenuText,
@@ -31,6 +33,7 @@ import {
   renderHelpCard,
   renderPingCard,
   renderMediaNoticeCard,
+  renderUrlNoticeCard,
   renderUrlDetectedCard,
 } from "../ui.js";
 
@@ -136,22 +139,124 @@ export async function handleIncomingMessage(message, env, ctx) {
     return new Response("OK", { status: 200 });
   }
 
-  // 3. Bare IPA URL Detection
+  // 3. Drop Link / Remote URL Detection -> Auto Download & Drop to Dropbox
   if (!hasMedia && !isCommand && rawText) {
     const urlMatch = rawText.match(/https?:\/\/[^\s<>"]+/i);
     if (urlMatch) {
       const rawUrl = normalizeUrl(urlMatch[0]);
-      const card = renderUrlDetectedCard(rawUrl);
 
-      const sentMsg = await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, card.text, {
+      // Detect if GitHub Actions Artifact URL or Run URL
+      const artifactMatch = rawUrl.match(
+        /https?:\/\/github\.com\/([^/]+)\/([^/]+)\/(?:actions\/runs\/\d+|suites\/\d+)\/artifacts\/(\d+)/i
+      ) || rawUrl.match(
+        /https?:\/\/api\.github\.com\/repos\/([^/]+)\/([^/]+)\/actions\/artifacts\/(\d+)/i
+      );
+
+      const runMatch = !artifactMatch
+        ? rawUrl.match(/https?:\/\/github\.com\/([^/]+)\/([^/]+)\/actions\/runs\/(\d+)/i)
+        : null;
+
+      let isArtifact = false;
+      let artifactId = null;
+      let artifactRepo = null;
+      let fileName = "downloaded_file.bin";
+      let fileSize = 0;
+
+      if (artifactMatch) {
+        isArtifact = true;
+        const owner = artifactMatch[1];
+        const repoName = artifactMatch[2];
+        artifactId = artifactMatch[3];
+        artifactRepo = `${owner}/${repoName}`;
+
+        // Attempt pre-fetching artifact metadata via GitHub API
+        const meta = await getArtifactDetails(env.GH_PAT, artifactRepo, artifactId);
+        if (meta) {
+          if (meta.expired) {
+            await sendMessage(
+              env.TELEGRAM_BOT_TOKEN,
+              chatId,
+              `⚠️ **ARTIFACT EXPIRED**\n──────────────────────────────\n` +
+              `This GitHub Actions artifact has expired and can no longer be downloaded.\n` +
+              `📦 **Artifact:** \`${meta.name}\`\n` +
+              `📁 **Repository:** \`${artifactRepo}\`\n` +
+              `📅 **Expired At:** \`${meta.expires_at || "Unknown"}\``,
+              { reply_to_message_id: messageId }
+            );
+            return new Response("OK", { status: 200 });
+          }
+          fileName = meta.name || `artifact_${artifactId}`;
+          fileSize = meta.size_in_bytes || 0;
+        } else {
+          fileName = `artifact_${artifactId}`;
+        }
+      } else if (runMatch) {
+        const owner = runMatch[1];
+        const repoName = runMatch[2];
+        const runId = runMatch[3];
+        const repoFullName = `${owner}/${repoName}`;
+
+        const artifacts = await getRunArtifacts(env.GH_PAT, repoFullName, runId);
+        if (artifacts && artifacts.length > 0) {
+          const first = artifacts[0];
+          isArtifact = true;
+          artifactId = String(first.id);
+          artifactRepo = repoFullName;
+          fileName = first.name || `artifact_${artifactId}`;
+          fileSize = first.size_in_bytes || 0;
+        } else {
+          fileName = `run_${runId}`;
+        }
+      } else {
+        // Generic direct HTTP/HTTPS URL
+        try {
+          const u = new URL(rawUrl);
+          const base = u.pathname.split("/").filter(Boolean).pop();
+          if (base) {
+            fileName = decodeURIComponent(base);
+          }
+        } catch (_) {}
+      }
+
+      const formattedSize = fileSize > 0 ? formatBytes(fileSize) : null;
+      const noticeText = renderUrlNoticeCard(rawUrl, fileName, formattedSize, isArtifact, artifactRepo);
+
+      const sentNotice = await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, noticeText, {
         reply_to_message_id: messageId,
-        reply_markup: { inline_keyboard: card.buttons },
       });
+      const dispatchMessageId = sentNotice?.message_id || null;
 
-      await saveSession(env, chatId, {
-        ipa: rawUrl,
-        dashMsgId: sentMsg?.message_id,
-      });
+      const payload = {
+        chat_id: chatId,
+        message_id: messageId,
+        dispatch_message_id: dispatchMessageId,
+        user_id: userId,
+        has_media: false,
+        download_url: rawUrl,
+        is_artifact: isArtifact,
+        artifact_id: artifactId,
+        artifact_repo: artifactRepo,
+        file_name: fileName,
+        file_size: fileSize,
+        text: rawText,
+      };
+
+      const repo = env.GH_REPO || "DexterDevKH/TelegramDropboxBot";
+      const dispatchResult = await dispatchSyncPipeline(env.GH_PAT, repo, payload);
+
+      if (!dispatchResult.success) {
+        console.error(`[GitHub Actions URL Dispatch Error ${dispatchResult.status}]:`, dispatchResult.error);
+        if (dispatchMessageId) {
+          await editMessageText(
+            env.TELEGRAM_BOT_TOKEN,
+            chatId,
+            dispatchMessageId,
+            `❌ **DISPATCH FAILED**\n──────────────────────────────\n` +
+            `⚠️ GitHub Actions API Error (HTTP ${dispatchResult.status})\n` +
+            `💡 *Please verify your GH_PAT secret in Cloudflare Worker settings.*`
+          );
+        }
+      }
 
       return new Response("OK", { status: 200 });
     }

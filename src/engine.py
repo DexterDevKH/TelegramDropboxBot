@@ -11,6 +11,8 @@ import signal
 import asyncio
 import logging
 import tempfile
+import zipfile
+import shutil
 from typing import Optional, Dict, Any
 
 from telethon import events, Button
@@ -26,6 +28,9 @@ from src.formatters import (
     normalize_url,
     decode_bitmask,
     SpeedTracker,
+    parse_artifact_url,
+    parse_run_url,
+    extract_single_file_from_zip,
 )
 from src.dropbox_service import DropboxService
 from src.github_service import GitHubService
@@ -188,6 +193,7 @@ class SyncApp:
 
         tmp_dir = tempfile.gettempdir()
         local_target = os.path.join(tmp_dir, f"{int(time.time())}_{filename}")
+        cleanup_paths = [local_target]
 
         last_dl_update_ts = [0.0]
         dl_start_time = time.time()
@@ -224,18 +230,34 @@ class SyncApp:
             )
             download_duration = max(0.1, time.time() - dl_start_time)
 
+            # Phase 1.5: If zip archive, unzip it and upload only the file inside
+            final_file_path = local_target
+            final_filename = filename
+            unzipped_from_archive = False
+
+            if filename.lower().endswith(".zip") or (not filename.lower().endswith(".ipa") and zipfile.is_zipfile(local_target)):
+                unzip_res = extract_single_file_from_zip(local_target, tmp_dir)
+                if unzip_res:
+                    final_file_path, extracted_name, extracted_size, ext_dest_dir = unzip_res
+                    final_filename = extracted_name
+                    file_size = extracted_size
+                    formatted_total_size = format_size(file_size)
+                    unzipped_from_archive = True
+                    cleanup_paths.extend([final_file_path, ext_dest_dir])
+                    logger.info(f"Unzipped media archive: extracted '{final_filename}' ({formatted_total_size})")
+
             await self.tg.safe_edit_message(
                 status_msg,
                 "☁️ **STREAMING TO DROPBOX**\n"
                 "──────────────────────────────\n"
-                f"📄 **Filename:** `{filename}`\n"
+                f"📄 **Filename:** `{final_filename}`\n"
                 f"📦 **Filesize:** `{formatted_total_size}`\n"
                 f"⏱️ **Ingest Time:** `{download_duration:.1f}s`\n"
                 "⚡ **Status:** Initializing cloud transfer...",
             )
 
             # Phase 2: Chunked Upload to Dropbox
-            dropbox_target_path = f"{self.config.dropbox_target_folder.rstrip('/')}/{filename}"
+            dropbox_target_path = f"{self.config.dropbox_target_folder.rstrip('/')}/{final_filename}"
             loop = asyncio.get_running_loop()
             upload_start_time = time.time()
             last_ul_update_ts = [0.0]
@@ -256,7 +278,7 @@ class SyncApp:
                     card = (
                         "☁️ **STREAMING TO DROPBOX**\n"
                         "──────────────────────────────\n"
-                        f"📄 **Filename:** `{filename}`\n"
+                        f"📄 **Filename:** `{final_filename}`\n"
                         f"📦 **Uploaded:** `{format_size(current_bytes)}` / `{formatted_total_size}`\n"
                         f"⚡ **Speed:** `{format_size(int(speed))}/s`  •  ⏳ **ETA:** `{format_eta(eta)}`\n"
                         f"📊 **Progress:** `{render_progress_bar(pct)}`"
@@ -267,7 +289,7 @@ class SyncApp:
 
             shared_url, pruned_items = await asyncio.to_thread(
                 self.dbx.upload_file_chunked,
-                local_target,
+                final_file_path,
                 dropbox_target_path,
                 self.config.dropbox_target_folder,
                 self.config.chunk_size_mb,
@@ -283,10 +305,15 @@ class SyncApp:
             completion_card = (
                 "✅ **TRANSFER COMPLETE**\n"
                 "──────────────────────────────\n"
-                f"📄 **Filename:** `{filename}`\n"
+                f"📄 **Filename:** `{final_filename}`\n"
                 f"📦 **Payload Size:** `{formatted_total_size}`\n"
-                f"📂 **Cloud Vault:** `{self.config.dropbox_target_folder}`\n\n"
-                "⏱️ **Performance Metrics**\n"
+                f"📂 **Cloud Vault:** `{self.config.dropbox_target_folder}`\n"
+            )
+            if unzipped_from_archive:
+                completion_card += "📦 *Unzipped from archive: only the extracted file was uploaded.*\n"
+
+            completion_card += (
+                "\n⏱️ **Performance Metrics**\n"
                 f"• ⬇️ **Telegram Ingest:** `{download_duration:.1f}s` (`{format_size(int(dl_speed))}/s`)\n"
                 f"• ☁️ **Dropbox Push:** `{upload_duration:.1f}s` (`{format_size(int(ul_speed))}/s`)\n"
                 f"• ⏱️ **Total Elapsed:** `{total_duration:.1f}s`\n"
@@ -338,11 +365,341 @@ class SyncApp:
             )
             await self.tg.safe_edit_message(status_msg, failure_card)
         finally:
-            if os.path.exists(local_target):
-                try:
-                    os.remove(local_target)
-                except Exception:
-                    pass
+            for p in cleanup_paths:
+                if os.path.exists(p):
+                    try:
+                        if os.path.isdir(p):
+                            shutil.rmtree(p, ignore_errors=True)
+                        else:
+                            os.remove(p)
+                    except Exception:
+                        pass
+
+    async def process_url_payload(
+        self,
+        url: str,
+        msg: Any,
+        dispatch_msg_id: Optional[int] = None,
+        is_artifact: bool = False,
+        artifact_id: Optional[str] = None,
+        artifact_repo: Optional[str] = None,
+        file_name_override: Optional[str] = None,
+        file_size_override: int = 0,
+    ):
+        """Downloads a remote URL or GitHub Actions artifact and streams chunked upload to Dropbox."""
+        self.last_activity_timestamp = time.time()
+
+        if not getattr(msg, "is_private", True):
+            return
+
+        sender = await msg.get_sender()
+        user_id = sender.id if sender else 0
+
+        if not self.config.is_authorized(user_id):
+            logger.warning(f"Unauthorized URL download attempt from user_id: {mask_user_id(user_id, self.config.privacy_mode)}")
+            return
+
+        target_chat_id = getattr(msg, "chat_id", getattr(msg, "peer_id", None))
+        if hasattr(target_chat_id, "user_id"):
+            target_chat_id = target_chat_id.user_id
+
+        status_msg = None
+        if dispatch_msg_id and target_chat_id:
+            try:
+                status_msg = await self.tg.client.get_messages(target_chat_id, ids=dispatch_msg_id)
+                if status_msg:
+                    logger.info(f"Reusing existing dispatch notice message ID: {dispatch_msg_id}")
+            except Exception as e:
+                logger.warning(f"Could not fetch dispatch notice message {dispatch_msg_id}: {e}")
+
+        # URL Pattern Matching: GitHub Artifact or Run
+        if not is_artifact:
+            art_info = parse_artifact_url(url)
+            if art_info:
+                is_artifact = True
+                artifact_repo = art_info["repo_full_name"]
+                artifact_id = art_info["artifact_id"]
+            else:
+                run_info = parse_run_url(url)
+                if run_info:
+                    run_artifacts = await self.gh.get_run_artifacts(run_info["repo_full_name"], run_info["run_id"])
+                    if run_artifacts:
+                        is_artifact = True
+                        artifact_repo = run_info["repo_full_name"]
+                        artifact_id = str(run_artifacts[0].get("id"))
+                        if not file_name_override:
+                            file_name_override = run_artifacts[0].get("name")
+                        if not file_size_override:
+                            file_size_override = run_artifacts[0].get("size_in_bytes", 0)
+
+        # Inspect artifact metadata
+        artifact_name_from_meta = None
+        if is_artifact and artifact_repo and artifact_id:
+            meta = await self.gh.get_artifact_metadata(artifact_repo, artifact_id)
+            if meta:
+                if meta.get("expired"):
+                    expired_card = (
+                        "⚠️ **ARTIFACT EXPIRED**\n"
+                        "──────────────────────────────\n"
+                        f"📦 **Artifact:** `{meta.get('name')}`\n"
+                        f"📁 **Repository:** `{artifact_repo}`\n"
+                        f"📅 **Expired At:** `{meta.get('expires_at', 'Unknown')}`\n\n"
+                        "💡 *This GitHub Actions artifact has expired and can no longer be downloaded.*"
+                    )
+                    if status_msg:
+                        await self.tg.safe_edit_message(status_msg, expired_card)
+                    else:
+                        await msg.reply(expired_card)
+                    return
+                artifact_name_from_meta = meta.get("name")
+                if not file_name_override and artifact_name_from_meta:
+                    file_name_override = artifact_name_from_meta
+                if not file_size_override and meta.get("size_in_bytes"):
+                    file_size_override = meta["size_in_bytes"]
+
+        initial_name = file_name_override or "downloaded_file.bin"
+        source_label = f"GitHub Artifact ({artifact_repo})" if is_artifact else normalize_url(url)
+        formatted_initial_size = format_size(file_size_override) if file_size_override > 0 else "Querying size..."
+
+        init_card = (
+            "⏳ **INGESTING URL PAYLOAD**\n"
+            "──────────────────────────────\n"
+            f"🔗 **Source:** `{source_label}`\n"
+            f"📄 **Target:** `{initial_name}`\n"
+            f"📦 **Filesize:** `{formatted_initial_size}`\n"
+            "⚡ **Status:** Connecting to remote server..."
+        )
+
+        if not status_msg:
+            status_msg = await msg.reply(init_card)
+        else:
+            await self.tg.safe_edit_message(status_msg, init_card)
+
+        tmp_dir = tempfile.gettempdir()
+        temp_download_target = os.path.join(tmp_dir, f"dl_{int(time.time())}_{sanitize_filename(initial_name)}")
+        final_file_path = temp_download_target
+        cleanup_paths = [temp_download_target]
+
+        last_dl_update_ts = [0.0]
+        dl_start_time = time.time()
+        dl_speed_tracker = SpeedTracker(alpha=0.3)
+        loop = asyncio.get_running_loop()
+
+        def download_progress_hook(current_bytes: int, total_bytes: int):
+            now = time.time()
+            if (now - last_dl_update_ts[0] > 3.0) or (total_bytes > 0 and current_bytes >= total_bytes):
+                last_dl_update_ts[0] = now
+                pct = (current_bytes / total_bytes * 100.0) if total_bytes > 0 else 0.0
+                speed = dl_speed_tracker.update(current_bytes)
+                if speed <= 0:
+                    elapsed = max(0.1, now - dl_start_time)
+                    speed = current_bytes / elapsed
+                remaining_bytes = max(0, total_bytes - current_bytes) if total_bytes > 0 else 0
+                eta = (remaining_bytes / speed) if speed > 0 and total_bytes > 0 else 0
+
+                total_str = format_size(total_bytes) if total_bytes > 0 else "Unknown size"
+                source_title = "GITHUB ARTIFACT" if is_artifact else "REMOTE URL"
+                card = (
+                    f"⬇️ **DOWNLOADING FROM {source_title}**\n"
+                    "──────────────────────────────\n"
+                    f"📄 **File:** `{initial_name}`\n"
+                    f"📦 **Received:** `{format_size(current_bytes)}` / `{total_str}`\n"
+                    f"⚡ **Speed:** `{format_size(int(speed))}/s`  •  ⏳ **ETA:** `{format_eta(eta)}`\n"
+                    f"📊 **Progress:** `{render_progress_bar(pct)}`"
+                )
+                asyncio.run_coroutine_threadsafe(
+                    self.tg.safe_edit_message(status_msg, card), loop
+                )
+
+        try:
+            # Phase 1: Download Ingestion
+            final_filename = initial_name
+            extracted_single_file = False
+
+            if is_artifact:
+                if not temp_download_target.lower().endswith(".zip"):
+                    temp_download_target += ".zip"
+                    cleanup_paths.append(temp_download_target)
+
+                success, err_msg = await self.gh.download_artifact_zip(
+                    artifact_repo, artifact_id, temp_download_target, download_progress_hook
+                )
+                if not success:
+                    raise RuntimeError(f"Artifact download failed: {err_msg}")
+
+                # Unzip artifact archive and upload only the file inside
+                unzip_res = extract_single_file_from_zip(temp_download_target, tmp_dir)
+                if unzip_res:
+                    final_file_path, extracted_name, extracted_size, ext_dest_dir = unzip_res
+                    final_filename = extracted_name
+                    file_size = extracted_size
+                    cleanup_paths.extend([final_file_path, ext_dest_dir])
+                    extracted_single_file = True
+                    logger.info(f"Unzipped artifact archive: extracted '{final_filename}' ({format_size(file_size)})")
+                else:
+                    raise RuntimeError("Failed to unzip artifact: archive contains no valid files.")
+
+            else:
+                # Generic HTTP/HTTPS URL
+                success, err_msg, detected_name, total_bytes = await self.gh.download_stream_url(
+                    url, temp_download_target, download_progress_hook
+                )
+                if not success:
+                    raise RuntimeError(f"URL download failed: {err_msg}")
+
+                downloaded_name = sanitize_filename(detected_name or file_name_override or "downloaded_file.bin")
+                final_file_path = temp_download_target
+                final_filename = downloaded_name
+
+                # If zip archive, unzip it and upload only the file inside
+                if downloaded_name.lower().endswith(".zip") or (not downloaded_name.lower().endswith(".ipa") and zipfile.is_zipfile(temp_download_target)):
+                    unzip_res = extract_single_file_from_zip(temp_download_target, tmp_dir)
+                    if unzip_res:
+                        final_file_path, extracted_name, extracted_size, ext_dest_dir = unzip_res
+                        final_filename = extracted_name
+                        file_size = extracted_size
+                        cleanup_paths.extend([final_file_path, ext_dest_dir])
+                        extracted_single_file = True
+                        logger.info(f"Unzipped URL payload: extracted '{final_filename}' ({format_size(file_size)})")
+
+            if not os.path.exists(final_file_path):
+                raise RuntimeError("Downloaded payload not found on disk.")
+
+            file_size = os.path.getsize(final_file_path)
+            formatted_total_size = format_size(file_size)
+            download_duration = max(0.1, time.time() - dl_start_time)
+
+            await self.tg.safe_edit_message(
+                status_msg,
+                "☁️ **STREAMING TO DROPBOX**\n"
+                "──────────────────────────────\n"
+                f"📄 **Filename:** `{final_filename}`\n"
+                f"📦 **Filesize:** `{formatted_total_size}`\n"
+                f"⏱️ **Download Time:** `{download_duration:.1f}s`\n"
+                "⚡ **Status:** Initializing cloud transfer...",
+            )
+
+            # Phase 2: Chunked Upload to Dropbox
+            dropbox_target_path = f"{self.config.dropbox_target_folder.rstrip('/')}/{final_filename}"
+            upload_start_time = time.time()
+            last_ul_update_ts = [0.0]
+            ul_speed_tracker = SpeedTracker(alpha=0.3)
+
+            def dropbox_progress_hook(current_bytes: int, total_bytes: int):
+                now = time.time()
+                if (now - last_ul_update_ts[0] > 3.0) or (current_bytes >= total_bytes):
+                    last_ul_update_ts[0] = now
+                    pct = (current_bytes / total_bytes * 100.0) if total_bytes > 0 else 0.0
+                    speed = ul_speed_tracker.update(current_bytes)
+                    if speed <= 0:
+                        elapsed = max(0.1, now - upload_start_time)
+                        speed = current_bytes / elapsed
+                    remaining_bytes = max(0, total_bytes - current_bytes)
+                    eta = (remaining_bytes / speed) if speed > 0 else 0
+
+                    card = (
+                        "☁️ **STREAMING TO DROPBOX**\n"
+                        "──────────────────────────────\n"
+                        f"📄 **Filename:** `{final_filename}`\n"
+                        f"📦 **Uploaded:** `{format_size(current_bytes)}` / `{formatted_total_size}`\n"
+                        f"⚡ **Speed:** `{format_size(int(speed))}/s`  •  ⏳ **ETA:** `{format_eta(eta)}`\n"
+                        f"📊 **Progress:** `{render_progress_bar(pct)}`"
+                    )
+                    asyncio.run_coroutine_threadsafe(
+                        self.tg.safe_edit_message(status_msg, card), loop
+                    )
+
+            shared_url, pruned_items = await asyncio.to_thread(
+                self.dbx.upload_file_chunked,
+                final_file_path,
+                dropbox_target_path,
+                self.config.dropbox_target_folder,
+                self.config.chunk_size_mb,
+                dropbox_progress_hook,
+            )
+
+            upload_duration = max(0.1, time.time() - upload_start_time)
+            total_duration = time.time() - dl_start_time
+
+            dl_speed = file_size / download_duration if download_duration > 0 else 0
+            ul_speed = file_size / upload_duration if upload_duration > 0 else 0
+
+            completion_card = (
+                "✅ **TRANSFER COMPLETE**\n"
+                "──────────────────────────────\n"
+                f"📄 **Filename:** `{final_filename}`\n"
+                f"📦 **Payload Size:** `{formatted_total_size}`\n"
+                f"📂 **Cloud Vault:** `{self.config.dropbox_target_folder}`\n"
+            )
+            if is_artifact:
+                completion_card += f"🔗 **Source:** GitHub Actions Artifact (`{artifact_repo}`)\n"
+                if extracted_single_file:
+                    completion_card += "📦 *Extracted single binary from artifact zip archive.*\n"
+                completion_card += "\n"
+            else:
+                completion_card += f"🔗 **Source:** Remote Web Link\n\n"
+
+            completion_card += (
+                "⏱️ **Performance Metrics**\n"
+                f"• ⬇️ **Ingest Time:** `{download_duration:.1f}s` (`{format_size(int(dl_speed))}/s`)\n"
+                f"• ☁️ **Dropbox Push:** `{upload_duration:.1f}s` (`{format_size(int(ul_speed))}/s`)\n"
+                f"• ⏱️ **Total Elapsed:** `{total_duration:.1f}s`\n"
+            )
+
+            if pruned_items:
+                pruned_str = ", ".join([f"`{name}`" for name in pruned_items])
+                completion_card += (
+                    f"\n♻️ **Retention Auto-Rotation (Cap: {self.config.max_files_in_folder})**\n"
+                    f"• Pruned oldest: {pruned_str}\n"
+                )
+
+            if shared_url:
+                await self.tg.safe_edit_message(
+                    status_msg,
+                    completion_card,
+                    buttons=[[Button.url("🌐 Open in Dropbox", shared_url)]],
+                    link_preview=False,
+                )
+
+                # Direct 1-tap clipboard copy via Telegram Bot API v7.0+
+                await asyncio.to_thread(
+                    apply_native_copy_button,
+                    self.config.telegram_bot_token,
+                    target_chat_id,
+                    status_msg.id,
+                    shared_url,
+                )
+            else:
+                completion_card += "\nℹ️ *Payload securely archived in Dropbox vault.*"
+                await self.tg.safe_edit_message(status_msg, completion_card, buttons=None, link_preview=False)
+
+            self.session_transfers_count += 1
+            self.session_transfers_bytes += file_size
+            log_file = mask_filename(final_filename, self.config.privacy_mode)
+            logger.info(f"URL sync complete: '{log_file}' ({formatted_total_size}) in {total_duration:.1f}s")
+
+        except Exception as exc:
+            log_file = mask_filename(initial_name, self.config.privacy_mode)
+            logger.error(f"URL Pipeline Failure for '{log_file}': {exc}", exc_info=True)
+            failure_card = (
+                "❌ **TRANSFER FAILED**\n"
+                "──────────────────────────────\n"
+                f"📄 **Target:** `{initial_name}`\n"
+                f"⚠️ **Error Details:** `{str(exc)}`\n"
+                "──────────────────────────────\n"
+                "💡 *Verify the link is active, credentials/tokens are valid, or retry.*"
+            )
+            await self.tg.safe_edit_message(status_msg, failure_card)
+        finally:
+            for p in cleanup_paths:
+                if os.path.exists(p):
+                    try:
+                        if os.path.isdir(p):
+                            shutil.rmtree(p, ignore_errors=True)
+                        else:
+                            os.remove(p)
+                    except Exception:
+                        pass
 
     def register_event_handlers(self):
         """Registers all Telethon event handlers for commands, interactive build flow, and media."""
@@ -924,6 +1281,14 @@ class SyncApp:
                 await self.tg.disconnect()
                 return
 
+            # 8.5 Handle Dropped Links / URLs in Daemon Mode
+            if not msg.media and raw_text:
+                url_match = re.search(r"https?://[^\s<>\"]+", raw_text)
+                if url_match:
+                    raw_url = normalize_url(url_match.group(0))
+                    await self.process_url_payload(raw_url, msg)
+                    return
+
             # 9. Handle Media Uploads
             if msg.media:
                 await self.process_media_message(msg)
@@ -951,7 +1316,26 @@ class SyncApp:
             target_msg = await self.tg.client.get_messages(chat_id, ids=message_id)
             if target_msg:
                 logger.info("Target payload acquired. Commencing ingestion...")
-                await self.process_media_message(target_msg, dispatch_msg_id=dispatch_msg_id)
+                if self.config.download_url:
+                    await self.process_url_payload(
+                        self.config.download_url,
+                        target_msg,
+                        dispatch_msg_id=dispatch_msg_id,
+                        is_artifact=self.config.is_artifact,
+                        artifact_id=self.config.artifact_id,
+                        artifact_repo=self.config.artifact_repo,
+                        file_name_override=self.config.file_name,
+                        file_size_override=self.config.file_size,
+                    )
+                elif target_msg.media:
+                    await self.process_media_message(target_msg, dispatch_msg_id=dispatch_msg_id)
+                else:
+                    url_match = re.search(r"https?://[^\s<>\"]+", target_msg.text or "")
+                    if url_match:
+                        raw_url = normalize_url(url_match.group(0))
+                        await self.process_url_payload(raw_url, target_msg, dispatch_msg_id=dispatch_msg_id)
+                    else:
+                        logger.warning(f"Target message {message_id} in chat {chat_id} has neither media nor URL.")
             else:
                 logger.warning(f"Target message {message_id} not found in chat {chat_id}.")
         except Exception as err:

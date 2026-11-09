@@ -15,6 +15,7 @@ Powered by a 24/7 **Cloudflare Worker Global Edge Gateway** (<20ms latency) and 
 ## 🌟 Key Architecture & Highlights
 
 - **🚀 2.0 GB MTProto Direct Binary Ingestion**: Full MTProto protocol implementation streaming files up to 2,000 MB directly from Telegram's media cluster.
+- **🔗 Auto-Download for Dropped Links & GitHub Actions Artifacts**: Drop any direct download URL or GitHub Actions artifact link (e.g. `https://github.com/DexterDevKH/ytkace/actions/runs/.../artifacts/...`) directly in chat. The bot automatically fetches the artifact/file, unzips single binaries (e.g. `.deb` / `.ipa`), and streams chunked uploads to Dropbox with dual-phase progress bars.
 - **⚡ 100% Serverless Edge-First Operation**:
   - **Cloudflare Worker (`webhook/`)**: Free global edge gateway running 24/7. Handles commands (`/build`, `/status`, `/ping`, `/help`, `/cancel`), inline toggle menus, parameter prompts, and dispatches GitHub Actions pipelines.
   - **On-Demand CI Runner (`bot.py` / `src/`)**: Boots on Ubuntu runner only when a payload arrives or build tracking is needed, streams chunked uploads to Dropbox, and terminates immediately (zero hosting fees).
@@ -76,7 +77,9 @@ Powered by a 24/7 **Cloudflare Worker Global Edge Gateway** (<20ms latency) and 
 | `/cancel` | Edge Gateway | Cleanly aborts any active parameter prompt and removes leftover messages |
 | `/help` or `/start` | Edge Gateway | Displays the interactive operational manual |
 
-> 💡 **Quick Ingestion**: Forward or upload any media file (document, video, audio, IPA, archive) to trigger automatic Dropbox sync.
+> 💡 **Quick Ingestion**:
+> • **Upload Media**: Forward or upload any media file (document, video, audio, IPA, archive) to trigger automatic Dropbox sync.
+> • **Drop Links**: Paste any direct download URL or GitHub Actions artifact link (e.g., `https://github.com/DexterDevKH/ytkace/actions/runs/42453711687/artifacts/13606462977`) to auto-download and push directly to Dropbox.
 
 ---
 

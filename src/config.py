@@ -62,6 +62,14 @@ class AppConfig:
     idle_keep_alive_seconds: int = 0
     is_github_actions: bool = False
 
+    # URL & Artifact Ingestion Context
+    download_url: Optional[str] = None
+    is_artifact: bool = False
+    artifact_id: Optional[str] = None
+    artifact_repo: Optional[str] = None
+    file_name: Optional[str] = None
+    file_size: int = 0
+
     def is_authorized(self, user_id: int) -> bool:
         """Validates if user ID has permission to invoke bot actions."""
         if not self.authorized_user_ids:
@@ -130,6 +138,15 @@ def load_config() -> AppConfig:
     privacy = os.getenv("PRIVACY_MODE", "true").strip().lower() in ("true", "1", "yes")
     log_level = os.getenv("LOG_LEVEL", "INFO").strip()
 
+    # Parse URL & Artifact Ingestion Context
+    download_url = os.getenv("DOWNLOAD_URL", "").strip() or None
+    is_artifact = os.getenv("IS_ARTIFACT", "false").strip().lower() in ("true", "1", "yes")
+    artifact_id = os.getenv("ARTIFACT_ID", "").strip() or None
+    artifact_repo = os.getenv("ARTIFACT_REPO", "").strip() or None
+    file_name = os.getenv("FILE_NAME", "").strip() or None
+    file_size_raw = os.getenv("FILE_SIZE", "0").strip()
+    file_size = int(file_size_raw) if file_size_raw.isdigit() else 0
+
     return AppConfig(
         telegram_bot_token=bot_token,
         telegram_api_id=api_id,
@@ -154,5 +171,11 @@ def load_config() -> AppConfig:
         build_start_time=build_start_time,
         idle_keep_alive_seconds=int(os.getenv("IDLE_KEEP_ALIVE_SECONDS", "0")),
         is_github_actions=os.getenv("GITHUB_ACTIONS", "").lower() == "true",
+        download_url=download_url,
+        is_artifact=is_artifact,
+        artifact_id=artifact_id,
+        artifact_repo=artifact_repo,
+        file_name=file_name,
+        file_size=file_size,
     )
 
