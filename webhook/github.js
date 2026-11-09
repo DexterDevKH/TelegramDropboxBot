@@ -33,13 +33,26 @@ export async function dispatchSyncPipeline(pat, repo, payload, eventType = "tele
   const targetRepo = repo || "DexterDevKH/TelegramDropboxBot";
   const url = `${GITHUB_API_URL}/repos/${targetRepo}/dispatches`;
 
+  // GitHub repository_dispatch client_payload strictly limits to at most 10 top-level properties.
+  // Enforce a hard clamp so 422 errors never occur.
+  let clientPayload = payload || {};
+  const propKeys = Object.keys(clientPayload);
+  if (propKeys.length > 10) {
+    console.warn(`[dispatchSyncPipeline] client_payload has ${propKeys.length} keys, exceeding GitHub 10-key limit. Pruning excess keys.`);
+    const truncated = {};
+    for (const k of propKeys.slice(0, 10)) {
+      truncated[k] = clientPayload[k];
+    }
+    clientPayload = truncated;
+  }
+
   try {
     const res = await fetch(url, {
       method: "POST",
       headers: getHeaders(pat),
       body: JSON.stringify({
         event_type: eventType,
-        client_payload: payload,
+        client_payload: clientPayload,
       }),
     });
 

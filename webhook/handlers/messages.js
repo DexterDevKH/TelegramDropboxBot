@@ -230,16 +230,16 @@ export async function handleIncomingMessage(message, env, ctx) {
         chat_id: chatId,
         message_id: messageId,
         dispatch_message_id: dispatchMessageId,
-        user_id: userId,
-        has_media: false,
         download_url: rawUrl,
-        is_artifact: isArtifact,
-        artifact_id: artifactId,
-        artifact_repo: artifactRepo,
         file_name: fileName,
-        file_size: fileSize,
-        text: rawText,
+        file_size: fileSize || 0,
+        is_artifact: Boolean(isArtifact),
       };
+
+      if (isArtifact) {
+        if (artifactId) payload.artifact_id = String(artifactId);
+        if (artifactRepo) payload.artifact_repo = String(artifactRepo);
+      }
 
       const repo = env.GH_REPO || "DexterDevKH/TelegramDropboxBot";
       const dispatchResult = await dispatchSyncPipeline(env.GH_PAT, repo, payload);
@@ -247,13 +247,20 @@ export async function handleIncomingMessage(message, env, ctx) {
       if (!dispatchResult.success) {
         console.error(`[GitHub Actions URL Dispatch Error ${dispatchResult.status}]:`, dispatchResult.error);
         if (dispatchMessageId) {
+          let errDetail = "";
+          try {
+            const parsed = JSON.parse(dispatchResult.error);
+            if (parsed.message) errDetail = `\n📄 *${parsed.message}*`;
+          } catch (_) {
+            if (dispatchResult.error) errDetail = `\n📄 *${dispatchResult.error.slice(0, 150)}*`;
+          }
           await editMessageText(
             env.TELEGRAM_BOT_TOKEN,
             chatId,
             dispatchMessageId,
             `❌ **DISPATCH FAILED**\n──────────────────────────────\n` +
-            `⚠️ GitHub Actions API Error (HTTP ${dispatchResult.status})\n` +
-            `💡 *Please verify your GH_PAT secret in Cloudflare Worker settings.*`
+            `⚠️ GitHub Actions API Error (HTTP ${dispatchResult.status})${errDetail}\n` +
+            `💡 *Please verify your GH_PAT permissions in Cloudflare Worker settings.*`
           );
         }
       }
@@ -374,11 +381,8 @@ export async function handleIncomingMessage(message, env, ctx) {
       chat_id: chatId,
       message_id: messageId,
       dispatch_message_id: dispatchMessageId,
-      user_id: userId,
-      has_media: true,
       file_name: fileName,
-      file_size: fileSize,
-      text: rawText,
+      file_size: fileSize || 0,
     };
 
     const repo = env.GH_REPO || "DexterDevKH/TelegramDropboxBot";
@@ -387,13 +391,20 @@ export async function handleIncomingMessage(message, env, ctx) {
     if (!dispatchResult.success) {
       console.error(`[GitHub Actions Dispatch Error ${dispatchResult.status}]:`, dispatchResult.error);
       if (dispatchMessageId) {
+        let errDetail = "";
+        try {
+          const parsed = JSON.parse(dispatchResult.error);
+          if (parsed.message) errDetail = `\n📄 *${parsed.message}*`;
+        } catch (_) {
+          if (dispatchResult.error) errDetail = `\n📄 *${dispatchResult.error.slice(0, 150)}*`;
+        }
         await editMessageText(
           env.TELEGRAM_BOT_TOKEN,
           chatId,
           dispatchMessageId,
           `❌ **DISPATCH FAILED**\n──────────────────────────────\n` +
-          `⚠️ GitHub Actions API Error (HTTP ${dispatchResult.status})\n` +
-          `💡 *Please verify your GH_PAT secret in Cloudflare Worker settings.*`
+          `⚠️ GitHub Actions API Error (HTTP ${dispatchResult.status})${errDetail}\n` +
+          `💡 *Please verify your GH_PAT permissions in Cloudflare Worker settings.*`
         );
       }
     }
