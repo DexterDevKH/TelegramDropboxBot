@@ -28,6 +28,7 @@ Powered by a 24/7 **Cloudflare Worker Global Edge Gateway** (<20ms latency) and 
   - **Stateless Bitmask Engine**: Toggles 13 modular tweak extensions instantly without brittle regex parsing or server session limits.
   - Single-use force reply prompts with clean chat auto-cleanup (prompts and input messages are automatically deleted upon receipt).
 - **♻️ Automated FIFO Folder Retention**: Automatically prunes the oldest files when folder capacity exceeds the configured cap (`MAX_FILES_IN_FOLDER`).
+- **📁 Smart Destination Routing**: Automatically stores `.ipa` files inside the designated vault folder (`DROPBOX_TARGET_FOLDER`), while all non-IPA payloads (e.g. rootless `.deb` tweaks, documents, media) are uploaded outside the folder directly to the Dropbox root (`/`) with retention pruning safely restricted to the dedicated folder.
 - **🛡️ Privacy Shield & Log Sanitization**: Automatically masks transferred filenames (`se***t.pdf`), redacts Telegram user IDs, hides Dropbox account details, and dynamically registers `::add-mask::` on all secrets in GitHub Actions console logs.
 - **🧹 Auto-Purge Run History**: Automated cleanup workflow (`cleanup.yml`) and pre/post steps automatically delete completed workflow runs and execution logs from GitHub Actions.
 
@@ -138,7 +139,7 @@ Configure in **Settings ➔ Secrets and variables ➔ Actions**:
 | `DROPBOX_REFRESH_TOKEN` | **Yes** | Permanent OAuth 2.0 offline refresh token (generate via `python get_refresh_token.py`) |
 | `GH_PAT` | **Yes** | GitHub Personal Access Token with `repo` or `actions:write` permissions |
 | `AUTHORIZED_USER_IDS` | No | Comma-separated Telegram User IDs allowed to use the bot (e.g. `123456,789012`). Empty = public. |
-| `DROPBOX_TARGET_FOLDER` | No | Destination folder in Dropbox (Default: `/Telegram Uploads`) |
+| `DROPBOX_TARGET_FOLDER` | No | Destination folder in Dropbox (Default: `/IPA`) |
 | `MAX_FILES_IN_FOLDER` | No | Maximum number of files to retain in folder before FIFO pruning (Default: `2`) |
 | `PRIVACY_MODE` | No | Mask filenames, user IDs, and paths in console logs (Default: `true`) |
 

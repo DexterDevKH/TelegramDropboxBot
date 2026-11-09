@@ -70,6 +70,9 @@ class DropboxService:
         if not self.client:
             return deleted_files
 
+        if not folder_path or folder_path.strip("/") == "":
+            return deleted_files
+
         try:
             files: List[FileMetadata] = []
             result = self.client.files_list_folder(folder_path)
@@ -156,8 +159,10 @@ class DropboxService:
         )
         logger.info(f"Successfully committed file to Dropbox: {log_dest}")
 
-        # Enforce FIFO Retention
-        pruned_files = self.enforce_folder_retention(target_folder, max_files=self.config.max_files_in_folder)
+        # Enforce FIFO Retention only on configured subfolders (never on root)
+        pruned_files: List[str] = []
+        if target_folder and target_folder.strip("/") != "":
+            pruned_files = self.enforce_folder_retention(target_folder, max_files=self.config.max_files_in_folder)
 
         # Generate direct download shared link
         shared_link = ""

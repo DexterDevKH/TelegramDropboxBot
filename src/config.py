@@ -39,7 +39,7 @@ class AppConfig:
     dropbox_app_secret: Optional[str] = None
     dropbox_refresh_token: Optional[str] = None
     dropbox_access_token: Optional[str] = None
-    dropbox_target_folder: str = "/Telegram Uploads"
+    dropbox_target_folder: str = "/IPA"
 
     # Access control & limits
     authorized_user_ids: Set[int] = field(default_factory=set)
@@ -104,7 +104,7 @@ def load_config() -> AppConfig:
         print("CRITICAL CONFIG ERROR: TELEGRAM_API_ID must be a valid integer.", file=sys.stderr)
         sys.exit(1)
 
-    target_folder = os.getenv("DROPBOX_TARGET_FOLDER", "/Telegram Uploads").strip()
+    target_folder = os.getenv("DROPBOX_TARGET_FOLDER", "/IPA").strip()
     if not target_folder.startswith("/"):
         target_folder = "/" + target_folder
 

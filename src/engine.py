@@ -31,6 +31,7 @@ from src.formatters import (
     parse_artifact_url,
     parse_run_url,
     extract_single_file_from_zip,
+    resolve_dropbox_destination,
 )
 from src.dropbox_service import DropboxService
 from src.github_service import GitHubService
@@ -257,7 +258,9 @@ class SyncApp:
             )
 
             # Phase 2: Chunked Upload to Dropbox
-            dropbox_target_path = f"{self.config.dropbox_target_folder.rstrip('/')}/{final_filename}"
+            dropbox_target_path, retention_folder, vault_display = resolve_dropbox_destination(
+                final_filename, self.config.dropbox_target_folder
+            )
             loop = asyncio.get_running_loop()
             upload_start_time = time.time()
             last_ul_update_ts = [0.0]
@@ -291,7 +294,7 @@ class SyncApp:
                 self.dbx.upload_file_chunked,
                 final_file_path,
                 dropbox_target_path,
-                self.config.dropbox_target_folder,
+                retention_folder,
                 self.config.chunk_size_mb,
                 dropbox_progress_hook,
             )
@@ -307,7 +310,7 @@ class SyncApp:
                 "──────────────────────────────\n"
                 f"📄 **Filename:** `{final_filename}`\n"
                 f"📦 **Payload Size:** `{formatted_total_size}`\n"
-                f"📂 **Cloud Vault:** `{self.config.dropbox_target_folder}`\n"
+                f"📂 **Cloud Vault:** `{vault_display}`\n"
             )
             if unzipped_from_archive:
                 completion_card += "📦 *Unzipped from archive: only the extracted file was uploaded.*\n"
@@ -580,7 +583,9 @@ class SyncApp:
             )
 
             # Phase 2: Chunked Upload to Dropbox
-            dropbox_target_path = f"{self.config.dropbox_target_folder.rstrip('/')}/{final_filename}"
+            dropbox_target_path, retention_folder, vault_display = resolve_dropbox_destination(
+                final_filename, self.config.dropbox_target_folder
+            )
             upload_start_time = time.time()
             last_ul_update_ts = [0.0]
             ul_speed_tracker = SpeedTracker(alpha=0.3)
@@ -613,7 +618,7 @@ class SyncApp:
                 self.dbx.upload_file_chunked,
                 final_file_path,
                 dropbox_target_path,
-                self.config.dropbox_target_folder,
+                retention_folder,
                 self.config.chunk_size_mb,
                 dropbox_progress_hook,
             )
@@ -629,7 +634,7 @@ class SyncApp:
                 "──────────────────────────────\n"
                 f"📄 **Filename:** `{final_filename}`\n"
                 f"📦 **Payload Size:** `{formatted_total_size}`\n"
-                f"📂 **Cloud Vault:** `{self.config.dropbox_target_folder}`\n"
+                f"📂 **Cloud Vault:** `{vault_display}`\n"
             )
             if is_artifact:
                 completion_card += f"🔗 **Source:** GitHub Actions Artifact (`{artifact_repo}`)\n"

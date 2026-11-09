@@ -17,6 +17,7 @@ from src.formatters import (
     parse_run_url,
     parse_content_disposition_filename,
     extract_filename_from_url,
+    resolve_dropbox_destination,
 )
 
 class TestFormatters(unittest.TestCase):
@@ -168,6 +169,32 @@ class TestFormatters(unittest.TestCase):
             extract_filename_from_url("https://example.com/"),
             "downloaded_file.bin"
         )
+
+    def test_resolve_dropbox_destination(self):
+        # .ipa file goes inside the configured folder
+        dest_ipa, ret_ipa, vault_ipa = resolve_dropbox_destination("MyApp.ipa", "/IPA")
+        self.assertEqual(dest_ipa, "/IPA/MyApp.ipa")
+        self.assertEqual(ret_ipa, "/IPA")
+        self.assertEqual(vault_ipa, "/IPA")
+
+        # Uppercase .IPA also goes inside folder
+        dest_ipa_upper, _, _ = resolve_dropbox_destination("YouTube.IPA", "/IPA")
+        self.assertEqual(dest_ipa_upper, "/IPA/YouTube.IPA")
+
+        # Non-ipa files (deb, pdf, mp4, etc.) go outside the folder to root /
+        dest_deb, ret_deb, vault_deb = resolve_dropbox_destination("YTKACE-deb-rootless.deb", "/IPA")
+        self.assertEqual(dest_deb, "/YTKACE-deb-rootless.deb")
+        self.assertEqual(ret_deb, "")  # Root is protected from retention pruning
+        self.assertEqual(vault_deb, "/ (Root)")
+
+        dest_pdf, ret_pdf, vault_pdf = resolve_dropbox_destination("document.pdf", "/IPA")
+        self.assertEqual(dest_pdf, "/document.pdf")
+        self.assertEqual(ret_pdf, "")
+        self.assertEqual(vault_pdf, "/ (Root)")
+
+        dest_zip, ret_zip, vault_zip = resolve_dropbox_destination("archive.zip", "/IPA")
+        self.assertEqual(dest_zip, "/archive.zip")
+        self.assertEqual(ret_zip, "")
 
 if __name__ == "__main__":
     unittest.main()

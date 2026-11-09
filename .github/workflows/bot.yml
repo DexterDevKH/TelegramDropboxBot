@@ -181,7 +181,7 @@ jobs:
           DROPBOX_REFRESH_TOKEN: ${{ secrets.DROPBOX_REFRESH_TOKEN }}
           DROPBOX_ACCESS_TOKEN: ${{ secrets.DROPBOX_ACCESS_TOKEN }}
           AUTHORIZED_USER_IDS: ${{ secrets.AUTHORIZED_USER_IDS }}
-          DROPBOX_TARGET_FOLDER: ${{ secrets.DROPBOX_TARGET_FOLDER || '/Telegram Uploads' }}
+          DROPBOX_TARGET_FOLDER: ${{ secrets.DROPBOX_TARGET_FOLDER || '/IPA' }}
           MAX_FILES_IN_FOLDER: ${{ github.event.inputs.retention_cap || secrets.MAX_FILES_IN_FOLDER || '2' }}
           CHUNK_SIZE_MB: "8"
           LOG_LEVEL: ${{ github.event.inputs.log_level || 'INFO' }}
