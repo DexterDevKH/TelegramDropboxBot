@@ -307,6 +307,42 @@ pub fn format_version_status_text(apps_data: &[IosAppInfo]) -> String {
     lines.join("\n")
 }
 
+pub fn get_version_alert_buttons(app_info: &IosAppInfo) -> serde_json::Value {
+    let store_url = if app_info.track_view_url.is_empty() {
+        "https://apps.apple.com"
+    } else {
+        &app_info.track_view_url
+    };
+
+    if app_info.bundle_id == "com.google.ios.youtubemusic" {
+        serde_json::json!([
+            [{"text": "🎵 Build DTMusicUltimate", "callback_data": "sel:dtmusic"}],
+            [{"text": "🍏 App Store", "url": store_url}]
+        ])
+    } else {
+        serde_json::json!([
+            [
+                {"text": "🚀 Build DTKACE Plus", "callback_data": "sel:dtkace"},
+                {"text": "✨ Build DTLite Plus", "callback_data": "sel:dtlite"}
+            ],
+            [{"text": "🍏 App Store", "url": store_url}]
+        ])
+    }
+}
+
+pub fn get_version_status_buttons() -> serde_json::Value {
+    serde_json::json!([
+        [
+            {"text": "🚀 Build DTKACE Plus", "callback_data": "sel:dtkace"},
+            {"text": "✨ Build DTLite Plus", "callback_data": "sel:dtlite"}
+        ],
+        [
+            {"text": "🎵 Build DTMusicUltimate", "callback_data": "sel:dtmusic"},
+            {"text": "🔄 Refresh Versions", "callback_data": "check_versions"}
+        ]
+    ])
+}
+
 pub async fn send_telegram_alert(
     bot_token: &str,
     chat_ids: &[i64],

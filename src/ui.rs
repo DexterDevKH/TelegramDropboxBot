@@ -280,3 +280,73 @@ pub fn render_status_card(config: &AppConfig, account_name: &str) -> String {
         }
     )
 }
+
+pub fn render_help_card() -> String {
+    "⚡ **TELEGRAM TO DROPBOX PIPELINE**\n\
+     ──────────────────────────────\n\
+     📥 **Quick Transfer:** Forward any file or paste direct URLs (up to 2 GB).\n\
+     🚀 **GitHub Builder:** Send `/build` to configure parameters & trigger builds.\n\n\
+     🕹️ **Commands Manual**\n\
+     • `/build` — Configure inputs, toggle extensions & dispatch build\n\
+     • `/settweak` — Update secret TWEAK_URL env for DTKACE and DTLite\n\
+     • `/checkversion` — Check official App Store iOS releases\n\
+     • `/status` — View real-time runner status & health metrics\n\
+     • `/ping` — Measure gateway round-trip edge latency\n\
+     • `/help` — Display this operational manual\n\n\
+     🟢 **Status:** Armed and ready for transmission."
+        .to_string()
+}
+
+pub fn render_ping_card() -> String {
+    "⚡ **GATEWAY PONG**\n\
+     ──────────────────────────────\n\
+     • 🟢 **Status:** `Operational (100%)`\n\
+     • 🛰️ **Host:**   `Native Rust Core Engine`\n\
+     • ⚡ **Engine:** `High-Performance Async Daemon`\n\n\
+     💡 *Drop any media or URL to sync, or send /build to trigger builds.*"
+        .to_string()
+}
+
+pub fn render_extensions_keyboard(target_key: &str, mask_hex: &str) -> serde_json::Value {
+    let exts = get_extensions(target_key);
+    let decoded = decode_bitmask(mask_hex, exts);
+    let mut keyboard = Vec::new();
+
+    for (i, chunk) in exts.chunks(2).enumerate() {
+        let mut row = Vec::new();
+        let idx1 = i * 2;
+        let is_enabled1 = decoded.is_enabled(chunk[0].key);
+        row.push(serde_json::json!({
+            "text": format!("{} {}", if is_enabled1 { "✅" } else { "❌" }, chunk[0].name),
+            "callback_data": format!("tgl:{}:{}:{}", target_key, idx1, mask_hex)
+        }));
+        if chunk.len() > 1 {
+            let idx2 = idx1 + 1;
+            let is_enabled2 = decoded.is_enabled(chunk[1].key);
+            row.push(serde_json::json!({
+                "text": format!("{} {}", if is_enabled2 { "✅" } else { "❌" }, chunk[1].name),
+                "callback_data": format!("tgl:{}:{}:{}", target_key, idx2, mask_hex)
+            }));
+        }
+        keyboard.push(row);
+    }
+
+    let all_disabled = decoded.enabled_count == 0;
+    keyboard.push(vec![
+        serde_json::json!({
+            "text": if all_disabled { "⚡ Enable All" } else { "⚡ Disable All" },
+            "callback_data": format!("tgl_all:{}:{}", target_key, mask_hex)
+        }),
+        serde_json::json!({
+            "text": "🔄 Reset Defaults",
+            "callback_data": format!("tgl_rst:{}", target_key)
+        }),
+    ]);
+
+    keyboard.push(vec![serde_json::json!({
+        "text": format!("💾 Save & Return ({}/{})", decoded.enabled_count, decoded.total_count),
+        "callback_data": format!("ext_done:{}:{}", target_key, mask_hex)
+    })]);
+
+    serde_json::Value::Array(keyboard.into_iter().map(serde_json::Value::Array).collect())
+}

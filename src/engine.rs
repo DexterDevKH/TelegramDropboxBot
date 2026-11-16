@@ -10,23 +10,23 @@ use tokio::sync::Mutex;
 use tracing::{debug, info, warn};
 
 use crate::config::AppConfig;
-use crate::constants::{get_target, TARGET_DTKACE};
+use crate::constants::{get_extensions, get_target, TARGET_DTKACE};
 use crate::dropbox::DropboxService;
 use crate::formatters::{
-    extract_single_file_from_zip, format_eta, format_size, match_app_bundle, parse_artifact_url,
-    parse_run_url, render_progress_bar, resolve_dropbox_destination, sanitize_filename,
-    SpeedTracker,
+    decode_bitmask, extract_single_file_from_zip, format_eta, format_size, match_app_bundle,
+    parse_artifact_url, parse_run_url, render_progress_bar, resolve_dropbox_destination,
+    sanitize_filename, SpeedTracker,
 };
 use crate::github::GitHubService;
 use crate::privacy::{mask_filename, mask_user_id};
 use crate::telegram::TelegramService;
 use crate::ui::{
-    render_dashboard_buttons, render_dashboard_text, render_main_menu, render_status_card,
-    DashboardState,
+    render_dashboard_buttons, render_dashboard_text, render_extensions_keyboard, render_help_card,
+    render_main_menu, render_ping_card, render_status_card, DashboardState,
 };
 use crate::version_checker::{
     check_all_ios_versions, format_version_alert_text, format_version_status_text,
-    send_telegram_alert,
+    get_version_alert_buttons, get_version_status_buttons, send_telegram_alert,
 };
 
 struct ProgressReporter {
@@ -116,6 +116,14 @@ pub struct ProcessPayloadRequest<'a> {
     pub artifact_repo: Option<&'a str>,
     pub file_name_override: Option<&'a str>,
     pub file_size_override: u64,
+    pub telegram_file_id: Option<&'a str>,
+}
+
+#[derive(Debug, Clone)]
+pub struct PendingInputPrompt {
+    pub field: String,
+    pub target_key: String,
+    pub dash_msg_id: i64,
 }
 
 pub struct SyncApp {
@@ -124,7 +132,7 @@ pub struct SyncApp {
     pub dbx: DropboxService,
     pub gh: GitHubService,
     user_dashboards: Arc<Mutex<HashMap<i64, DashboardState>>>,
-    _pending_inputs: Arc<Mutex<HashMap<i64, String>>>,
+    pending_inputs: Arc<Mutex<HashMap<i64, PendingInputPrompt>>>,
     last_activity: Arc<AtomicU64>,
 }
 
@@ -144,7 +152,7 @@ impl SyncApp {
             dbx,
             gh,
             user_dashboards: Arc::new(Mutex::new(HashMap::new())),
-            _pending_inputs: Arc::new(Mutex::new(HashMap::new())),
+            pending_inputs: Arc::new(Mutex::new(HashMap::new())),
             last_activity: Arc::new(AtomicU64::new(now_sec)),
         }
     }
@@ -209,6 +217,7 @@ impl SyncApp {
                 artifact_repo: self.config.artifact_repo.as_deref(),
                 file_name_override: self.config.file_name.as_deref(),
                 file_size_override: self.config.file_size,
+                ..Default::default()
             })
             .await?;
         } else {
@@ -306,20 +315,22 @@ impl SyncApp {
             "Querying size...".to_string()
         };
 
+        let source_display = if is_artifact {
+            "GitHub Actions Artifact"
+        } else if req.telegram_file_id.is_some() {
+            "Telegram Direct Upload"
+        } else {
+            raw_url
+        };
+
         let init_card = format!(
-            "📥 **INGESTING URL PAYLOAD**\n\
+            "📥 **INGESTING PAYLOAD**\n\
              ──────────────────────────────\n\
              • 🔗 **Source:**   `{}`\n\
              • 📄 **Target:**   `{}`\n\
              • 📦 **Filesize:** `{}`\n\n\
-             ⚡ *Connecting to remote host...*",
-            if is_artifact {
-                "GitHub Actions Artifact"
-            } else {
-                raw_url
-            },
-            initial_name,
-            formatted_size
+             ⚡ *Connecting and preparing stream...*",
+            source_display, initial_name, formatted_size
         );
         let _ = self
             .tg
@@ -341,6 +352,8 @@ impl SyncApp {
         let dl_start = Instant::now();
         let dl_title = if is_artifact {
             "DOWNLOADING FROM GITHUB ARTIFACT"
+        } else if req.telegram_file_id.is_some() {
+            "DOWNLOADING FROM TELEGRAM"
         } else {
             "DOWNLOADING FROM REMOTE URL"
         };
@@ -396,6 +409,33 @@ impl SyncApp {
                     "Failed to unzip artifact: archive contains no valid files.".to_string()
                 );
             }
+        } else if let Some(fid) = req.telegram_file_id {
+            self.tg
+                .download_file_by_id(fid, &download_target, |c, t| {
+                    dl_reporter.update(c, t);
+                })
+                .await?;
+
+            if final_filename.to_lowercase().ends_with(".zip")
+                || (!final_filename.to_lowercase().ends_with(".ipa")
+                    && File::open(&download_target)
+                        .ok()
+                        .and_then(|f| zip::ZipArchive::new(f).ok())
+                        .is_some())
+            {
+                if let Some(unzip_res) = extract_single_file_from_zip(&download_target, &tmp_dir) {
+                    final_file_path = unzip_res.final_file_path.clone();
+                    final_filename = unzip_res.extracted_name;
+                    cleanup_paths.push(final_file_path.clone());
+                    cleanup_paths.push(unzip_res.extract_dest_dir);
+                    extracted_from_zip = true;
+                    info!(
+                        "Unzipped uploaded archive: extracted '{}' ({})",
+                        final_filename,
+                        format_size(unzip_res.file_size)
+                    );
+                }
+            }
         } else {
             let (detected_name, _downloaded_bytes) = self
                 .gh
@@ -410,10 +450,10 @@ impl SyncApp {
 
             if final_filename.to_lowercase().ends_with(".zip")
                 || (!final_filename.to_lowercase().ends_with(".ipa")
-                    && zip::ZipArchive::new(
-                        File::open(&download_target).map_err(|e| e.to_string())?,
-                    )
-                    .is_ok())
+                    && File::open(&download_target)
+                        .ok()
+                        .and_then(|f| zip::ZipArchive::new(f).ok())
+                        .is_some())
             {
                 if let Some(unzip_res) = extract_single_file_from_zip(&download_target, &tmp_dir) {
                     final_file_path = unzip_res.final_file_path.clone();
@@ -422,7 +462,7 @@ impl SyncApp {
                     cleanup_paths.push(unzip_res.extract_dest_dir);
                     extracted_from_zip = true;
                     info!(
-                        "Unzipped URL payload: extracted '{}' ({})",
+                        "Unzipped downloaded archive: extracted '{}' ({})",
                         final_filename,
                         format_size(unzip_res.file_size)
                     );
@@ -502,8 +542,18 @@ impl SyncApp {
                 completion_card
                     .push_str("  ℹ️ *Extracted single binary from artifact zip archive.*\n");
             }
+        } else if req.telegram_file_id.is_some() {
+            completion_card.push_str("• 🔗 **Source:** Telegram Direct Upload\n");
+            if extracted_from_zip {
+                completion_card
+                    .push_str("  ℹ️ *Extracted single binary from uploaded zip archive.*\n");
+            }
         } else {
             completion_card.push_str("• 🔗 **Source:** Remote Web Link\n");
+            if extracted_from_zip {
+                completion_card
+                    .push_str("  ℹ️ *Extracted single binary from downloaded zip archive.*\n");
+            }
         }
 
         completion_card.push_str(&format!(
@@ -650,6 +700,7 @@ impl SyncApp {
                                     artifact_repo: Some(target.repo),
                                     file_name_override: Some(&art.name),
                                     file_size_override: art.size_in_bytes,
+                                    ..Default::default()
                                 })
                                 .await?;
                             }
@@ -705,10 +756,17 @@ impl SyncApp {
 
         if !alerts.is_empty() {
             println!("\nFound {} new version alert(s)!", alerts.len());
-            let recipients: Vec<i64> = self.config.authorized_user_ids.iter().copied().collect();
+            let mut recipients: Vec<i64> =
+                self.config.authorized_user_ids.iter().copied().collect();
+            if recipients.is_empty() {
+                if let Some(cid) = self.config.target_chat_id {
+                    recipients.push(cid);
+                }
+            }
 
             for (app_info, prev_ver) in &alerts {
                 let alert_text = format_version_alert_text(app_info, prev_ver.as_deref());
+                let buttons = get_version_alert_buttons(app_info);
                 println!("\n{}", alert_text);
 
                 if !recipients.is_empty() {
@@ -716,7 +774,7 @@ impl SyncApp {
                         &self.config.telegram_bot_token,
                         &recipients,
                         &alert_text,
-                        None,
+                        Some(buttons),
                     )
                     .await;
                     info!("Alert dispatched to {} recipient(s).", recipients.len());
@@ -773,20 +831,137 @@ impl SyncApp {
             return;
         }
 
+        // Direct media payload uploads (Document, Video, Audio)
+        if let Some(ref doc) = msg.document {
+            let doc_name = doc.file_name.as_deref().unwrap_or("document.bin");
+            let doc_size = doc.file_size.unwrap_or(0);
+            let _ = self
+                .process_url_payload(ProcessPayloadRequest {
+                    raw_url: "",
+                    chat_id,
+                    message_id: msg.message_id,
+                    file_name_override: Some(doc_name),
+                    file_size_override: doc_size,
+                    telegram_file_id: Some(&doc.file_id),
+                    ..Default::default()
+                })
+                .await;
+            return;
+        }
+
+        if let Some(ref vid) = msg.video {
+            let vid_name = vid.file_name.as_deref().unwrap_or("video.mp4");
+            let vid_size = vid.file_size.unwrap_or(0);
+            let _ = self
+                .process_url_payload(ProcessPayloadRequest {
+                    raw_url: "",
+                    chat_id,
+                    message_id: msg.message_id,
+                    file_name_override: Some(vid_name),
+                    file_size_override: vid_size,
+                    telegram_file_id: Some(&vid.file_id),
+                    ..Default::default()
+                })
+                .await;
+            return;
+        }
+
+        if let Some(ref aud) = msg.audio {
+            let aud_name = aud.file_name.as_deref().unwrap_or("audio.mp3");
+            let aud_size = aud.file_size.unwrap_or(0);
+            let _ = self
+                .process_url_payload(ProcessPayloadRequest {
+                    raw_url: "",
+                    chat_id,
+                    message_id: msg.message_id,
+                    file_name_override: Some(aud_name),
+                    file_size_override: aud_size,
+                    telegram_file_id: Some(&aud.file_id),
+                    ..Default::default()
+                })
+                .await;
+            return;
+        }
+
         let text = msg.text.as_deref().unwrap_or("").trim();
 
-        if text == "/start" {
-            let welcome = "⚡ **TELEGRAM TO DROPBOX PIPELINE**\n\
-                ──────────────────────────────\n\
-                High-performance native cloud sync & iOS workflow engine.\n\n\
-                • `/build` — Interactive iOS IPA GitHub Actions builder\n\
-                • `/settweak` — Update encrypted TWEAK_URL secret env\n\
-                • `/checkversion` — Check official App Store iOS releases\n\
-                • `/status` — View cloud vaults & system status\n\n\
-                💡 *Drop any file or download URL to auto-sync to Dropbox.*";
+        // Check if there is an active parameter input prompt for this user
+        {
+            let mut pending = self.pending_inputs.lock().await;
+            if let Some(prompt) = pending.remove(&chat_id) {
+                if text == "/cancel" || text.eq_ignore_ascii_case("cancel") {
+                    let _ = self
+                        .tg
+                        .send_message(
+                            chat_id,
+                            "🚫 Input prompt cancelled.",
+                            Some(msg.message_id),
+                            None,
+                        )
+                        .await;
+                    return;
+                }
+
+                let mut dashboards = self.user_dashboards.lock().await;
+                let state = dashboards.entry(chat_id).or_insert_with(|| DashboardState {
+                    target_key: prompt.target_key.clone(),
+                    ..Default::default()
+                });
+
+                match prompt.field.as_str() {
+                    "ipa" => state.ipa = Some(text.to_string()),
+                    "name" => state.name = Some(text.to_string()),
+                    "bundle" => state.bundle = Some(text.to_string()),
+                    "tweak" => {
+                        if text.eq_ignore_ascii_case("default") || text.is_empty() {
+                            state.tweak = None;
+                        } else {
+                            state.tweak = Some(text.to_string());
+                        }
+                    }
+                    _ => {}
+                }
+
+                let card_text = render_dashboard_text(state);
+                let buttons = render_dashboard_buttons(state);
+                let _ = self
+                    .tg
+                    .edit_message_text(chat_id, prompt.dash_msg_id, &card_text, Some(buttons))
+                    .await;
+                let _ = self
+                    .tg
+                    .send_message(
+                        chat_id,
+                        "✅ Value updated successfully!",
+                        Some(msg.message_id),
+                        None,
+                    )
+                    .await;
+                return;
+            }
+        }
+
+        if text == "/start" || text == "/help" {
+            let help_card = render_help_card();
             let _ = self
                 .tg
-                .send_message(chat_id, welcome, Some(msg.message_id), None)
+                .send_message(chat_id, &help_card, Some(msg.message_id), None)
+                .await;
+        } else if text == "/ping" {
+            let ping_card = render_ping_card();
+            let _ = self
+                .tg
+                .send_message(chat_id, &ping_card, Some(msg.message_id), None)
+                .await;
+        } else if text == "/cancel" {
+            let _ = self
+                .tg
+                .send_message(
+                    chat_id,
+                    "🚫 No active operation to cancel.",
+                    Some(msg.message_id),
+                    None,
+                )
                 .await;
         } else if text == "/build" {
             let (menu_text, buttons) = render_main_menu();
@@ -794,7 +969,15 @@ impl SyncApp {
                 .tg
                 .send_message(chat_id, &menu_text, Some(msg.message_id), Some(buttons))
                 .await;
-        } else if text.starts_with("/settweak") {
+        } else if text == "/checkversion" || text == "/version" {
+            let (apps, _) = check_all_ios_versions(None).await;
+            let status_text = format_version_status_text(&apps);
+            let buttons = get_version_status_buttons();
+            let _ = self
+                .tg
+                .send_message(chat_id, &status_text, Some(msg.message_id), Some(buttons))
+                .await;
+        } else if text.starts_with("/settweak") || text.starts_with("/secret") {
             let parts: Vec<&str> = text.split_whitespace().collect();
             if parts.len() >= 3 {
                 let target_key = parts[1].to_lowercase();
@@ -872,7 +1055,7 @@ impl SyncApp {
                     .send_message(chat_id, usage, Some(msg.message_id), None)
                     .await;
             }
-        } else if text == "/status" {
+        } else if text == "/status" || text == "/info" {
             let status_text = render_status_card(&self.config, &self.dbx.account_name);
             let _ = self
                 .tg
@@ -923,6 +1106,237 @@ impl SyncApp {
                 .tg
                 .edit_message_text(chat_id, msg_id, cancel_text, None)
                 .await;
+            let mut pending = self.pending_inputs.lock().await;
+            pending.remove(&chat_id);
+        } else if data == "check_versions" {
+            let (apps, _) = check_all_ios_versions(None).await;
+            let status_text = format_version_status_text(&apps);
+            let buttons = get_version_status_buttons();
+            let _ = self
+                .tg
+                .edit_message_text(chat_id, msg_id, &status_text, Some(buttons))
+                .await;
+        } else if data.starts_with("exts:") {
+            let parts: Vec<&str> = data.split(':').collect();
+            if parts.len() >= 3 {
+                let target_key = parts[1];
+                let mask_hex = parts[2];
+                let kb = render_extensions_keyboard(target_key, mask_hex);
+                let text = format!(
+                    "⚙️ **CONFIGURE EXTENSIONS: {}**\n\
+                     ──────────────────────────────\n\
+                     Tap any extension below to toggle On (✅) or Off (❌).\n\
+                     Current state is saved automatically in a stateless bitmask.\n\n\
+                     💾 *Tap [ Save & Return ] when finished:*",
+                    target_key.to_uppercase()
+                );
+                let _ = self
+                    .tg
+                    .edit_message_text(chat_id, msg_id, &text, Some(kb))
+                    .await;
+            }
+        } else if data.starts_with("tgl:") {
+            let parts: Vec<&str> = data.split(':').collect();
+            if parts.len() >= 4 {
+                let target_key = parts[1];
+                let idx: usize = parts[2].parse().unwrap_or(0);
+                let mask_hex = parts[3];
+                let exts = get_extensions(target_key);
+                let default_mask = (1u64 << exts.len()) - 1;
+                let current_mask = u64::from_str_radix(mask_hex, 16).unwrap_or(default_mask);
+                let new_mask = current_mask ^ (1u64 << idx);
+                let new_mask_hex = format!("{:x}", new_mask);
+
+                let kb = render_extensions_keyboard(target_key, &new_mask_hex);
+                let text = format!(
+                    "⚙️ **CONFIGURE EXTENSIONS: {}**\n\
+                     ──────────────────────────────\n\
+                     Tap any extension below to toggle On (✅) or Off (❌).\n\
+                     Current state is saved automatically in a stateless bitmask.\n\n\
+                     💾 *Tap [ Save & Return ] when finished:*",
+                    target_key.to_uppercase()
+                );
+                let _ = self
+                    .tg
+                    .edit_message_text(chat_id, msg_id, &text, Some(kb))
+                    .await;
+            }
+        } else if data.starts_with("tgl_all:") {
+            let parts: Vec<&str> = data.split(':').collect();
+            if parts.len() >= 3 {
+                let target_key = parts[1];
+                let mask_hex = parts[2];
+                let exts = get_extensions(target_key);
+                let decoded = decode_bitmask(mask_hex, exts);
+                let new_mask_hex = if decoded.enabled_count == 0 {
+                    format!("{:x}", (1u64 << exts.len()) - 1)
+                } else {
+                    "0".to_string()
+                };
+                let kb = render_extensions_keyboard(target_key, &new_mask_hex);
+                let text = format!(
+                    "⚙️ **CONFIGURE EXTENSIONS: {}**\n\
+                     ──────────────────────────────\n\
+                     Tap any extension below to toggle On (✅) or Off (❌).\n\
+                     Current state is saved automatically in a stateless bitmask.\n\n\
+                     💾 *Tap [ Save & Return ] when finished:*",
+                    target_key.to_uppercase()
+                );
+                let _ = self
+                    .tg
+                    .edit_message_text(chat_id, msg_id, &text, Some(kb))
+                    .await;
+            }
+        } else if data.starts_with("tgl_rst:") {
+            let target_key = data.trim_start_matches("tgl_rst:");
+            let exts = get_extensions(target_key);
+            let default_mask_hex = format!("{:x}", (1u64 << exts.len()) - 1);
+            let kb = render_extensions_keyboard(target_key, &default_mask_hex);
+            let text = format!(
+                "⚙️ **CONFIGURE EXTENSIONS: {}**\n\
+                 ──────────────────────────────\n\
+                 Tap any extension below to toggle On (✅) or Off (❌).\n\
+                 Current state is saved automatically in a stateless bitmask.\n\n\
+                 💾 *Tap [ Save & Return ] when finished:*",
+                target_key.to_uppercase()
+            );
+            let _ = self
+                .tg
+                .edit_message_text(chat_id, msg_id, &text, Some(kb))
+                .await;
+        } else if data.starts_with("ext_done:") {
+            let parts: Vec<&str> = data.split(':').collect();
+            if parts.len() >= 3 {
+                let target_key = parts[1];
+                let mask_hex = parts[2];
+                let mut dashboards = self.user_dashboards.lock().await;
+                let state = dashboards.entry(chat_id).or_insert_with(|| DashboardState {
+                    target_key: target_key.to_string(),
+                    ..Default::default()
+                });
+                state.mask_hex = mask_hex.to_string();
+                let text = render_dashboard_text(state);
+                let buttons = render_dashboard_buttons(state);
+                let _ = self
+                    .tg
+                    .edit_message_text(chat_id, msg_id, &text, Some(buttons))
+                    .await;
+            }
+        } else if data.starts_with("ask:") {
+            let parts: Vec<&str> = data.split(':').collect();
+            if parts.len() >= 3 {
+                let field = parts[1];
+                let target_key = parts[2];
+                let mut pending = self.pending_inputs.lock().await;
+                pending.insert(
+                    chat_id,
+                    PendingInputPrompt {
+                        field: field.to_string(),
+                        target_key: target_key.to_string(),
+                        dash_msg_id: msg_id,
+                    },
+                );
+
+                let prompt_text = match field {
+                    "ipa" => format!(
+                        "🔗 **INPUT: DECRYPTED IPA URL**\n\
+                         ──────────────────────────────\n\
+                         • 📦 **Target:** `{}`\n\n\
+                         Reply with the direct download URL for the decrypted IPA file.\n\n\
+                         💡 *Type /cancel to abort.*",
+                        target_key.to_uppercase()
+                    ),
+                    "name" => format!(
+                        "🏷️ **INPUT: APP DISPLAY NAME**\n\
+                         ──────────────────────────────\n\
+                         • 📦 **Target:** `{}`\n\n\
+                         Reply with your desired app name (e.g. `My YouTube`).\n\n\
+                         💡 *Type /cancel to abort.*",
+                        target_key.to_uppercase()
+                    ),
+                    "bundle" => format!(
+                        "🆔 **INPUT: BUNDLE IDENTIFIER**\n\
+                         ──────────────────────────────\n\
+                         • 📦 **Target:** `{}`\n\n\
+                         Reply with your desired bundle identifier (e.g. `com.my.youtube`).\n\n\
+                         💡 *Type /cancel to abort.*",
+                        target_key.to_uppercase()
+                    ),
+                    "tweak" => format!(
+                        "💉 **INPUT: CUSTOM TWEAK URL**\n\
+                         ──────────────────────────────\n\
+                         • 📦 **Target:** `{}`\n\n\
+                         Reply with a direct link to custom .deb, or type `default` to reset.\n\n\
+                         💡 *Type /cancel to abort.*",
+                        target_key.to_uppercase()
+                    ),
+                    _ => "Reply with the updated value:".to_string(),
+                };
+                let _ = self
+                    .tg
+                    .send_message(chat_id, &prompt_text, Some(msg_id), None)
+                    .await;
+            }
+        } else if data.starts_with("trig:") {
+            let target_key = data.trim_start_matches("trig:");
+            let target = get_target(target_key).unwrap_or(&TARGET_DTKACE);
+            let dashboards = self.user_dashboards.lock().await;
+            if let Some(state) = dashboards.get(&chat_id) {
+                if let Some(ref ipa_url) = state.ipa {
+                    let mut inputs = serde_json::Map::new();
+                    inputs.insert("decrypted_ipa_url".to_string(), serde_json::json!(ipa_url));
+                    if let Some(ref n) = state.name {
+                        inputs.insert("app_name".to_string(), serde_json::json!(n));
+                    }
+                    if let Some(ref b) = state.bundle {
+                        inputs.insert("bundle_id".to_string(), serde_json::json!(b));
+                    }
+                    if let Some(ref t) = state.tweak {
+                        if !t.is_empty() {
+                            inputs.insert("custom_tweak_url".to_string(), serde_json::json!(t));
+                        }
+                    }
+                    if target.has_extensions {
+                        let exts = get_extensions(target_key);
+                        let decoded = decode_bitmask(&state.mask_hex, exts);
+                        for dis in &decoded.disabled {
+                            let input_key = format!("include_{}", dis);
+                            inputs.insert(input_key, serde_json::json!("false"));
+                        }
+                    }
+
+                    let inputs_val = serde_json::Value::Object(inputs);
+                    let (success_card, btns) =
+                        crate::ui::render_build_success_card(target, &inputs_val);
+                    match self
+                        .gh
+                        .trigger_workflow_dispatch(target.repo, target.workflow, inputs_val)
+                        .await
+                    {
+                        Ok(_) => {
+                            let _ = self
+                                .tg
+                                .edit_message_text(chat_id, msg_id, &success_card, Some(btns))
+                                .await;
+                        }
+                        Err(err) => {
+                            let err_card = format!(
+                                "❌ **WORKFLOW DISPATCH FAILED**\n\
+                                 ──────────────────────────────\n\
+                                 • 📦 **Repository:** `{}`\n\
+                                 • 📄 **Workflow:**   `{}`\n\
+                                 • ⚠️ **Details:**    `{}`\n\n\
+                                 💡 *Verify that your GH_PAT secret has 'repo' or 'actions:write' permissions.*",
+                                target.repo, target.workflow, err
+                            );
+                            let _ = self
+                                .tg
+                                .edit_message_text(chat_id, msg_id, &err_card, None)
+                                .await;
+                        }
+                    }
+                }
+            }
         }
     }
 }

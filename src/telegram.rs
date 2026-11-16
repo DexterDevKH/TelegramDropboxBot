@@ -42,6 +42,24 @@ pub struct TelegramPhotoSize {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+pub struct TelegramVideo {
+    pub file_id: String,
+    pub file_unique_id: String,
+    pub file_name: Option<String>,
+    pub mime_type: Option<String>,
+    pub file_size: Option<u64>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct TelegramAudio {
+    pub file_id: String,
+    pub file_unique_id: String,
+    pub file_name: Option<String>,
+    pub mime_type: Option<String>,
+    pub file_size: Option<u64>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
 pub struct TelegramMessage {
     pub message_id: i64,
     pub from: Option<TelegramUser>,
@@ -51,6 +69,8 @@ pub struct TelegramMessage {
     pub caption: Option<String>,
     pub document: Option<TelegramDocument>,
     pub photo: Option<Vec<TelegramPhotoSize>>,
+    pub video: Option<TelegramVideo>,
+    pub audio: Option<TelegramAudio>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -338,10 +358,10 @@ impl TelegramService {
         &self,
         file_id: &str,
         dest_path: &Path,
-        progress_cb: F,
+        mut progress_cb: F,
     ) -> Result<u64, String>
     where
-        F: Fn(u64, u64) + Send + Sync + 'static,
+        F: FnMut(u64, u64),
     {
         let url = format!(
             "https://api.telegram.org/bot{}/getFile?file_id={}",
