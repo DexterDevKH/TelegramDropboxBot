@@ -84,9 +84,7 @@ export async function handleCallbackQuery(callbackQuery, env, ctx) {
     const maskHex = parts[3] || "1fff";
 
     const repoLabel =
-      targetKey === "both"
-        ? "Both (DTKACE + DTLite)"
-        : targetKey === "dtlite"
+      targetKey === "dtlite"
         ? "DTLite Plus"
         : "DTKACE Plus";
     const promptTag = createPromptMetadataTag("secret_tweak", targetKey, dashMsgId, maskHex);

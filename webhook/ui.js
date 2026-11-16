@@ -482,8 +482,7 @@ export function renderSecretTweakMenuText() {
     "──────────────────────────────\n" +
     "Select a target repository to update its GitHub Actions `TWEAK_URL` secret:\n\n" +
     "• 🚀 **DTKACE Plus** (`DexterDevKH/DTKACE`)\n" +
-    "• ✨ **DTLite Plus** (`DexterDevKH/DTLite`)\n" +
-    "• 🔄 **Both Repositories**\n\n" +
+    "• ✨ **DTLite Plus** (`DexterDevKH/DTLite`)\n\n" +
     "🛡️ *Encrypted end-to-end via Libsodium SealedBox (X25519).*"
   );
 }
@@ -493,9 +492,6 @@ export function renderSecretTweakMenuButtons() {
     [
       { text: "🚀 DTKACE Plus", callback_data: "settweak_sel:dtkace" },
       { text: "✨ DTLite Plus", callback_data: "settweak_sel:dtlite" },
-    ],
-    [
-      { text: "🔄 Update Both (DTKACE + DTLite)", callback_data: "settweak_sel:both" },
     ],
     [
       { text: "❌ Dismiss", callback_data: "cancel" },

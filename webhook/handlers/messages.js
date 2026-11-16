@@ -128,34 +128,18 @@ export async function handleIncomingMessage(message, env, ctx) {
       }
       await deleteMessage(env.TELEGRAM_BOT_TOKEN, chatId, messageId);
 
-      const reposToUpdate = [];
-      if (targetKey === "both" || targetKey === "all") {
-        reposToUpdate.push(BUILD_TARGETS.dtkace.repo);
-        reposToUpdate.push(BUILD_TARGETS.dtlite.repo);
-      } else if (targetKey === "dtlite") {
-        reposToUpdate.push(BUILD_TARGETS.dtlite.repo);
-      } else {
-        reposToUpdate.push(BUILD_TARGETS.dtkace.repo);
-      }
-
-      let anySuccess = false;
-      let lastError = "";
-
-      for (const repo of reposToUpdate) {
-        const res = await updateRepositorySecret(env.GH_PAT, repo, "TWEAK_URL", targetUrl);
-        if (res.success) {
-          anySuccess = true;
-        } else {
-          lastError = res.error || `HTTP ${res.status}`;
-        }
-      }
-
+      const targetRepo =
+        targetKey === "dtlite"
+          ? BUILD_TARGETS.dtlite.repo
+          : BUILD_TARGETS.dtkace.repo;
       const repoLabel =
-        reposToUpdate.length > 1
-          ? "DTKACE Plus & DTLite Plus"
-          : targetKey === "dtlite"
+        targetKey === "dtlite"
           ? "DTLite Plus"
           : "DTKACE Plus";
+
+      const res = await updateRepositorySecret(env.GH_PAT, targetRepo, "TWEAK_URL", targetUrl);
+      const anySuccess = res.success;
+      const lastError = res.error || `HTTP ${res.status}`;
 
       if (anySuccess) {
         state.tweak = targetUrl;
@@ -434,15 +418,24 @@ export async function handleIncomingMessage(message, env, ctx) {
         const urlMatch = rawText.match(/https?:\/\/[^\s<>"]+/i);
         const targetUrl = urlMatch ? normalizeUrl(urlMatch[0]) : args[2];
 
-        const reposToUpdate = [];
-        if (targetArg === "both" || targetArg === "all") {
-          reposToUpdate.push(BUILD_TARGETS.dtkace.repo);
-          reposToUpdate.push(BUILD_TARGETS.dtlite.repo);
-        } else if (targetArg === "dtlite") {
-          reposToUpdate.push(BUILD_TARGETS.dtlite.repo);
-        } else {
-          reposToUpdate.push(BUILD_TARGETS.dtkace.repo);
+        if (targetArg !== "dtkace" && targetArg !== "dtlite") {
+          await sendMessage(
+            env.TELEGRAM_BOT_TOKEN,
+            chatId,
+            "⚠️ Invalid target. Choose `dtkace` or `dtlite`.",
+            { reply_to_message_id: messageId }
+          );
+          return new Response("OK", { status: 200 });
         }
+
+        const targetRepo =
+          targetArg === "dtlite"
+            ? BUILD_TARGETS.dtlite.repo
+            : BUILD_TARGETS.dtkace.repo;
+        const repoLabel =
+          targetArg === "dtlite"
+            ? "DTLite Plus"
+            : "DTKACE Plus";
 
         const waitMsg = await sendMessage(
           env.TELEGRAM_BOT_TOKEN,
@@ -451,21 +444,9 @@ export async function handleIncomingMessage(message, env, ctx) {
           { reply_to_message_id: messageId }
         );
 
-        let anySuccess = false;
-        let lastError = "";
-
-        for (const repo of reposToUpdate) {
-          const res = await updateRepositorySecret(env.GH_PAT, repo, "TWEAK_URL", targetUrl);
-          if (res.success) anySuccess = true;
-          else lastError = res.error || `HTTP ${res.status}`;
-        }
-
-        const repoLabel =
-          reposToUpdate.length > 1
-            ? "DTKACE Plus & DTLite Plus"
-            : targetArg === "dtlite"
-            ? "DTLite Plus"
-            : "DTKACE Plus";
+        const res = await updateRepositorySecret(env.GH_PAT, targetRepo, "TWEAK_URL", targetUrl);
+        const anySuccess = res.success;
+        const lastError = res.error || `HTTP ${res.status}`;
 
         const cardText = anySuccess
           ? renderSecretTweakSuccessCard(repoLabel, targetUrl)
