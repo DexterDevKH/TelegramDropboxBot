@@ -73,12 +73,14 @@ impl ProgressReporter {
         };
 
         let card = format!(
-            "⬇️ **{}**\n\
-             ──────────────────────────────\n\
-             📄 **File:** `{}`\n\
-             📦 **Progress:** `{}` / `{}`\n\
-             ⚡ **Speed:** `{}/s`  •  ⏳ **ETA:** `{}`\n\
-             📊 **Progress:** `{}`",
+            "╭─ ⬇️ **{}**\n\
+             ├──────────────────────────────\n\
+             │ 📄 **File:**    `{}`\n\
+             │ 📦 **Volume:**  `{}` / `{}`\n\
+             │ ⚡ **Speed:**   `{}/s`\n\
+             │ ⏳ **ETA:**     `{}`\n\
+             │\n\
+             ╰─ 📊 {}",
             self.title,
             self.file_name,
             format_size(current),
@@ -231,7 +233,10 @@ impl SyncApp {
         let status_msg_id = if let Some(disp_id) = req.dispatch_msg_id {
             disp_id
         } else {
-            let initial_card = "⏳ **INITIALIZING ENGINE**\n──────────────────────────────\n⚡ Connecting to cloud pipelines...";
+            let initial_card = "╭─ ⏳ **INITIALIZING CLOUD ENGINE**\n\
+                                ├──────────────────────────────\n\
+                                │ ⚡ Connecting to runner & pipelines...\n\
+                                ╰─ 🛰️ *Standing by for transmission...*";
             self.tg
                 .send_message(chat_id, initial_card, Some(message_id), None)
                 .await
@@ -272,12 +277,13 @@ impl SyncApp {
                 if let Some(meta) = self.gh.get_artifact_metadata(repo, art_id).await {
                     if meta.expired {
                         let expired_card = format!(
-                            "⚠️ **ARTIFACT EXPIRED**\n\
-                             ──────────────────────────────\n\
-                             📦 **Artifact:** `{}`\n\
-                             📁 **Repository:** `{}`\n\
-                             📅 **Expired At:** `{}`\n\n\
-                             💡 *This GitHub Actions artifact has expired and can no longer be downloaded.*",
+                            "╭─ ⚠️ **ARTIFACT EXPIRED**\n\
+                             ├──────────────────────────────\n\
+                             │ 📦 **Artifact:**   `{}`\n\
+                             │ 📁 **Repository:** `{}`\n\
+                             │ 📅 **Expired At:** `{}`\n\
+                             │\n\
+                             ╰─ 💡 *This GitHub Actions artifact has expired and can no longer be downloaded.*",
                             meta.name,
                             repo,
                             meta.expires_at.unwrap_or_else(|| "Unknown".to_string())
@@ -305,12 +311,13 @@ impl SyncApp {
         };
 
         let init_card = format!(
-            "⏳ **INGESTING URL PAYLOAD**\n\
-             ──────────────────────────────\n\
-             🔗 **Source:** `{}`\n\
-             📄 **Target:** `{}`\n\
-             📦 **Filesize:** `{}`\n\
-             ⚡ **Status:** Connecting to remote server...",
+            "╭─ 📥 **INGESTING URL PAYLOAD**\n\
+             ├──────────────────────────────\n\
+             │ 🔗 **Source:**   `{}`\n\
+             │ 📄 **Target:**   `{}`\n\
+             │ 📦 **Filesize:** `{}`\n\
+             │\n\
+             ╰─ ⚡ *Connecting to remote host...*",
             if is_artifact {
                 "GitHub Actions Artifact"
             } else {
@@ -435,12 +442,13 @@ impl SyncApp {
         let formatted_total_size = format_size(final_file_size);
 
         let ul_prep_card = format!(
-            "☁️ **STREAMING TO DROPBOX**\n\
-             ──────────────────────────────\n\
-             📄 **Filename:** `{}`\n\
-             📦 **Filesize:** `{}`\n\
-             ⏱️ **Download Time:** `{:.1}s`\n\
-             ⚡ **Status:** Initializing cloud transfer...",
+            "╭─ ☁️ **STREAMING TO DROPBOX**\n\
+             ├──────────────────────────────\n\
+             │ 📄 **Filename:** `{}`\n\
+             │ 📦 **Filesize:** `{}`\n\
+             │ ⏱️ **Ingest:**   `{:.1}s`\n\
+             │\n\
+             ╰─ ⚡ *Initializing chunked upload session...*",
             final_filename, formatted_total_size, dl_duration
         );
         let _ = self
@@ -483,33 +491,33 @@ impl SyncApp {
         let ul_speed = final_file_size as f64 / ul_duration;
 
         let mut completion_card = format!(
-            "✅ **TRANSFER COMPLETE**\n\
-             ──────────────────────────────\n\
-             📄 **Filename:** `{}`\n\
-             📦 **Payload Size:** `{}`\n\
-             📂 **Cloud Vault:** `{}`\n",
+            "╭─ 💎 **TRANSFER COMPLETE**\n\
+             ├──────────────────────────────\n\
+             │ 📄 **Filename:** `{}`\n\
+             │ 📦 **Size:**     `{}`\n\
+             │ 📂 **Vault:**    `{}`\n",
             final_filename, formatted_total_size, vault_display
         );
 
         if is_artifact {
             completion_card.push_str(&format!(
-                "🔗 **Source:** GitHub Actions Artifact (`{}`)\n",
+                "│ 🔗 **Source:**   GitHub Actions Artifact (`{}`)\n",
                 final_artifact_repo.as_deref().unwrap_or("Actions")
             ));
             if extracted_from_zip {
                 completion_card
-                    .push_str("📦 *Extracted single binary from artifact zip archive.*\n");
+                    .push_str("│ 📦 *Extracted single binary from artifact zip archive.*\n");
             }
-            completion_card.push('\n');
         } else {
-            completion_card.push_str("🔗 **Source:** Remote Web Link\n\n");
+            completion_card.push_str("│ 🔗 **Source:**   Remote Web Link\n");
         }
 
         completion_card.push_str(&format!(
-            "⏱️ **Performance Metrics**\n\
-             • ⬇️ **Ingest Time:** `{:.1}s` (`{}/s`)\n\
-             • ☁️ **Dropbox Push:** `{:.1}s` (`{}/s`)\n\
-             • ⏱️ **Total Elapsed:** `{:.1}s`\n",
+            "│\n\
+             ├─ ⏱️ **Benchmarks**\n\
+             │  • ⬇️ Ingest:  `{:.1}s` (`{}/s`)\n\
+             │  • ☁️ Cloud:   `{:.1}s` (`{}/s`)\n\
+             │  • ⏱️ Total:   `{:.1}s` elapsed\n",
             dl_duration,
             format_size(dl_speed as u64),
             ul_duration,
@@ -527,19 +535,25 @@ impl SyncApp {
             let detected_bundle = match_app_bundle(&final_filename);
             if let Some(bundle) = detected_bundle {
                 completion_card.push_str(&format!(
-                    "\n♻️ **Retention Auto-Rotation (`{}`)**\n\
-                     • Auto-replaced matching `{}`: {}\n",
+                    "│\n\
+                     ├─ ♻️ **Auto-Rotation (`{}`)**\n\
+                     │  • Auto-replaced matching `{}`:\n\
+                     │    {}\n",
                     vault_display, bundle, pruned_str
                 ));
             } else {
                 let cap = self.config.get_max_files_for_folder(&retention_folder);
                 completion_card.push_str(&format!(
-                    "\n♻️ **Retention Auto-Rotation (Cap: {} in `{}`)**\n\
-                     • Pruned oldest: {}\n",
+                    "│\n\
+                     ├─ ♻️ **Auto-Rotation (Cap: {} in `{}`)**\n\
+                     │  • Pruned oldest:\n\
+                     │    {}\n",
                     cap, vault_display, pruned_str
                 ));
             }
         }
+
+        completion_card.push_str("│\n╰─ 🔗 *Direct download ready via button below:*");
 
         if !shared_url.is_empty() {
             let _ = self
@@ -618,11 +632,13 @@ impl SyncApp {
                     if status == "completed" {
                         if conclusion.as_deref() == Some("success") {
                             let success_card = format!(
-                                "🎉 **BUILD SUCCESSFUL!**\n\
-                                 ──────────────────────────────\n\
-                                 📦 **Target:** `{}`\n\
-                                 🏷️ **Run ID:** `{}`\n\
-                                 ⚡ *Fetching compiled IPA artifact for automatic Dropbox archiving...*",
+                                "╭─ 🎉 **BUILD COMPLETED SUCCESSFULLY!**\n\
+                                 ├──────────────────────────────\n\
+                                 │ 📦 **Target:** `{}`\n\
+                                 │ 🏷️ **Run ID:** `{}`\n\
+                                 │ ⚡ **Status:** `Compiled & Verified`\n\
+                                 │\n\
+                                 ╰─ 📦 *Fetching compiled IPA artifact for automatic Dropbox archiving...*",
                                 target.name, rid
                             );
                             let _ = self
@@ -649,14 +665,16 @@ impl SyncApp {
                             }
                         } else {
                             let fail_card = format!(
-                                "❌ **BUILD FAILED**\n\
-                                 ──────────────────────────────\n\
-                                 📦 **Target:** `{}`\n\
-                                 🏷️ **Run ID:** `{}`\n\
-                                 ⚠️ **Conclusion:** `{}`\n\
-                                 ──────────────────────────────\n\
-                                 💡 *Check repository Actions logs for compilation failure details.*",
-                                target.name, rid, conclusion.unwrap_or_else(|| "failed".to_string())
+                                "╭─ ❌ **BUILD FAILED**\n\
+                                 ├──────────────────────────────\n\
+                                 │ 📦 **Target:**     `{}`\n\
+                                 │ 🏷️ **Run ID:**     `{}`\n\
+                                 │ ⚠️ **Conclusion:** `{}`\n\
+                                 │\n\
+                                 ╰─ 💡 *Check repository Actions logs for compilation error details.*",
+                                target.name,
+                                rid,
+                                conclusion.unwrap_or_else(|| "failed".to_string())
                             );
                             let _ = self
                                 .tg
@@ -666,13 +684,14 @@ impl SyncApp {
                         return Ok(());
                     } else {
                         let tracking_card = format!(
-                            "⏳ **BUILD IN PROGRESS**\n\
-                             ──────────────────────────────\n\
-                             📦 **Target:** `{}`\n\
-                             🏷️ **Run ID:** `{}`\n\
-                             ⚡ **Status:** `{}` (Check {}/{})\n\
-                             ──────────────────────────────\n\
-                             ☕ *Compilation running on GitHub Actions cloud runners...*",
+                            "╭─ ⚙️ **BUILD IN PROGRESS: {}**\n\
+                             ├──────────────────────────────\n\
+                             │ 📦 **Target:**   `{}`\n\
+                             │ 🏷️ **Run ID:**   `{}`\n\
+                             │ ⚡ **Status:**   `{}` (Poll {}/{})\n\
+                             │\n\
+                             ╰─ ☕ *Compilation actively executing on GitHub macOS runner...*",
+                            target.name,
                             target.name,
                             rid,
                             status,
@@ -769,15 +788,16 @@ impl SyncApp {
         let text = msg.text.as_deref().unwrap_or("").trim();
 
         if text == "/start" {
-            let welcome = "👋 **WELCOME TO TELEGRAM DROPBOX SYNC BOT**\n\
-                ──────────────────────────────\n\
-                I am your high-performance native cloud pipeline.\n\n\
-                Commands:\n\
-                • `/build` - Trigger YouTube / YouTube Music IPA builds\n\
-                • `/settweak` - Change secret custom tweak URL for DTLite / DTKACE\n\
-                • `/status` - Check cloud vaults & iOS App Store versions\n\
-                ──────────────────────────────\n\
-                💡 *You can also paste any direct file URL to instantly download and push to Dropbox.*";
+            let welcome = "╭─ ⚡ **TELEGRAM TO DROPBOX PIPELINE**\n\
+                ├──────────────────────────────\n\
+                │ High-performance native cloud sync & iOS workflow engine.\n\
+                │\n\
+                │ • `/build` — Interactive iOS IPA GitHub Actions builder\n\
+                │ • `/settweak` — Update encrypted TWEAK_URL secret env\n\
+                │ • `/checkversion` — Check official App Store iOS releases\n\
+                │ • `/status` — View cloud vaults & system status\n\
+                │\n\
+                ╰─ 💡 *Drop any file or download URL to auto-sync to Dropbox.*";
             let _ = self
                 .tg
                 .send_message(chat_id, welcome, Some(msg.message_id), None)
@@ -826,13 +846,14 @@ impl SyncApp {
                 {
                     Ok(_) => {
                         let succ = format!(
-                            "✅ **SECRET UPDATED SUCCESSFULLY**\n\
-                             ──────────────────────────────\n\
-                             📦 **Repository:** `{}`\n\
-                             🔐 **Secret:** `TWEAK_URL`\n\
-                             🔗 **Value:** `{}`\n\
-                             ──────────────────────────────\n\
-                             💡 *Subsequent workflow runs will now compile with this tweak.*",
+                            "╭─ ✅ **SECRET UPDATED SUCCESSFULLY**\n\
+                             ├──────────────────────────────\n\
+                             │ 📦 **Repository:**  `{}`\n\
+                             │ 🔐 **Secret Name:** `TWEAK_URL`\n\
+                             │ 🔗 **Tweak URL:**   `{}`\n\
+                             │ 🛡️ **Encryption:**  Libsodium SealedBox (X25519)\n\
+                             │\n\
+                             ╰─ 💡 *Subsequent workflow runs will compile with this tweak.*",
                             repo, tweak_url
                         );
                         let _ = self
@@ -842,7 +863,11 @@ impl SyncApp {
                     }
                     Err(err) => {
                         let err_card = format!(
-                            "❌ **SECRET UPDATE FAILED**\n──────────────────────────────\n⚠️ {}",
+                            "╭─ ❌ **SECRET UPDATE FAILED**\n\
+                             ├──────────────────────────────\n\
+                             │ ⚠️ **Details:** `{}`\n\
+                             │\n\
+                             ╰─ 💡 *Verify that your GH_PAT has repo/secrets:write permissions.*",
                             err
                         );
                         let _ = self
@@ -852,9 +877,14 @@ impl SyncApp {
                     }
                 }
             } else {
-                let usage = "ℹ️ **Usage:** `/settweak <dtkace|dtlite> <DIRECT_TWEAK_DEB_URL>`\n\n\
-                    Example:\n\
-                    `/settweak dtkace https://github.com/user/repo/releases/download/v1.0/tweak.deb`";
+                let usage = "╭─ ℹ️ **SET TWEAK SECRET COMMAND**\n\
+                             ├──────────────────────────────\n\
+                             │ **Usage:** `/settweak <dtkace|dtlite> <DEB_URL>`\n\
+                             │\n\
+                             │ **Example:**\n\
+                             │ `/settweak dtkace https://github.com/repo/releases/download/v1.0/tweak.deb`\n\
+                             │\n\
+                             ╰─ 🔐 *Updates GitHub Actions encrypted secret TWEAK_URL.*";
                 let _ = self
                     .tg
                     .send_message(chat_id, usage, Some(msg.message_id), None)

@@ -266,6 +266,25 @@ impl TelegramService {
             .await
             .map_err(|e| format!("apply_native_copy_button error: {}", e))?;
 
+        if !resp.status().is_success() {
+            // Fallback for environments where copy_text is unsupported
+            let fallback_payload = serde_json::json!({
+                "chat_id": chat_id,
+                "message_id": message_id,
+                "reply_markup": {
+                    "inline_keyboard": [
+                        [
+                            {
+                                "text": "🌐 Open in Dropbox",
+                                "url": web_url
+                            }
+                        ]
+                    ]
+                }
+            });
+            let _ = self.client.post(&url).json(&fallback_payload).send().await;
+        }
+
         Ok(resp.status().is_success())
     }
 

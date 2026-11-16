@@ -66,7 +66,10 @@ export default {
             await sendMessage(
               env.TELEGRAM_BOT_TOKEN,
               chatId,
-              "🔒 **ACCESS RESTRICTED**\n──────────────────────────────\nYour Telegram ID is not authorized to use this pipeline.",
+              "╭─ 🔒 **ACCESS RESTRICTED**\n" +
+              "├──────────────────────────────\n" +
+              "│ Your Telegram ID is not authorized to use this pipeline.\n" +
+              "╰─ 🛡️ *Configure AUTHORIZED_USER_IDS to grant access.*",
               { reply_to_message_id: messageId }
             );
           }

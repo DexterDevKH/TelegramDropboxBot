@@ -33,14 +33,15 @@ impl Default for DashboardState {
 }
 
 pub fn render_main_menu() -> (String, serde_json::Value) {
-    let text = "🚀 **TRIGGER GITHUB ACTIONS BUILD**\n\
-        ──────────────────────────────\n\
-        Choose which target repository you want to build:\n\n\
-        • 🚀 **DTKACE Plus**: Enhanced YouTube with YTKACE & 13 extensions\n\
-        • ✨ **DTLite Plus**: Lightweight YouTube mod with 10 extensions\n\
-        • 🎵 **DTMusicUltimate**: DexTube Music (Lossless audio mod)\n\
-        ──────────────────────────────\n\
-        💡 *Tap an app button below to customize parameters & trigger the build.*";
+    let text = "╭─ 🚀 **GITHUB ACTIONS WORKFLOW BUILDER**\n\
+                ├──────────────────────────────\n\
+                │ Choose a target iOS application to configure:\n\
+                │\n\
+                │ • 🚀 **DTKACE Plus** — Enhanced YouTube (13 modular tweaks)\n\
+                │ • ✨ **DTLite Plus** — Lightweight YouTube (Ad-block, PiP, RYD)\n\
+                │ • 🎵 **DTMusicUltimate** — DexTube Music (Lossless audio mod)\n\
+                │\n\
+                ╰─ 💡 *Select an app button below to customize and build.*";
 
     let buttons = serde_json::json!([
         [
@@ -51,7 +52,11 @@ pub fn render_main_menu() -> (String, serde_json::Value) {
             {"text": "🎵 DTMusicUltimate", "callback_data": "sel:dtmusic"}
         ],
         [
-            {"text": "❌ Cancel", "callback_data": "cancel"}
+            {"text": "🔐 Secret Tweak", "callback_data": "settweak_menu"},
+            {"text": "🍎 App Store Versions", "callback_data": "check_versions"}
+        ],
+        [
+            {"text": "❌ Dismiss", "callback_data": "cancel"}
         ]
     ]);
 
@@ -62,24 +67,6 @@ pub fn render_dashboard_text(state: &DashboardState) -> String {
     let target = get_target(&state.target_key).unwrap_or(&TARGET_DTKACE);
     let exts = get_extensions(&state.target_key);
     let decoded = decode_bitmask(&state.mask_hex, exts);
-
-    let mut ext_section = String::new();
-    if target.has_extensions && !exts.is_empty() {
-        ext_section = format!(
-            "• 🧩 **Extensions:** `{}/{} active`",
-            decoded.enabled_count, decoded.total_count
-        );
-        if !decoded.disabled.is_empty() {
-            let disabled_names: Vec<&str> = exts
-                .iter()
-                .filter(|e| decoded.disabled.contains(&e.key.to_string()))
-                .map(|e| e.name)
-                .collect();
-            ext_section.push_str(&format!(" *(Disabled: {})*\n", disabled_names.join(", ")));
-        } else {
-            ext_section.push_str(" *(All enabled)*\n");
-        }
-    }
 
     let ipa_display = state
         .ipa
@@ -110,15 +97,16 @@ pub fn render_dashboard_text(state: &DashboardState) -> String {
         .unwrap_or_else(|| "`Default (Built-in)`".to_string());
 
     let mut text = format!(
-        "🛠️ **BUILD PARAMETERS: {}**\n\
-         ──────────────────────────────\n\
-         📦 **Repository:** `{}`\n\
-         📄 **Workflow:** `{}`\n\
-         ℹ️ *{}*\n\n\
-         📋 **Current Configuration:**\n\
-         • 🔗 **IPA URL:** {}\n\
-         • 🏷️ **App Name:** {}\n\
-         • 🆔 **Bundle ID:** {}\n",
+        "╭─ 🛠️ **BUILD CONFIGURATION: {}**\n\
+         ├──────────────────────────────\n\
+         │ 📦 **Repository:** `{}`\n\
+         │ 📄 **Workflow:**   `{}`\n\
+         │ ℹ️ *{}*\n\
+         │\n\
+         ├─ 📋 **Parameters**\n\
+         │  • 🔗 **IPA URL:**     {}\n\
+         │  • 🏷️ **App Name:**    {}\n\
+         │  • 🆔 **Bundle ID:**   {}\n",
         target.name,
         target.repo,
         target.workflow,
@@ -129,12 +117,26 @@ pub fn render_dashboard_text(state: &DashboardState) -> String {
     );
 
     if target.has_extensions {
-        text.push_str(&format!("• 💉 **Tweak URL:** {}\n", tweak_display));
+        text.push_str(&format!("│  • 💉 **Tweak URL:**   {}\n", tweak_display));
+        text.push_str(&format!(
+            "│  • 🧩 **Extensions:**  `{}/{} active`",
+            decoded.enabled_count, decoded.total_count
+        ));
+        if !decoded.disabled.is_empty() {
+            let disabled_names: Vec<&str> = exts
+                .iter()
+                .filter(|e| decoded.disabled.contains(&e.key.to_string()))
+                .map(|e| e.name)
+                .collect();
+            text.push_str(&format!(" *(Disabled: {})*\n", disabled_names.join(", ")));
+        } else {
+            text.push_str(" *(All active)*\n");
+        }
     }
-    text.push_str(&ext_section);
+
     text.push_str(
-        "──────────────────────────────\n\
-         💡 *Press any button below to enter or change values:*",
+        "│\n\
+         ╰─ 💡 *Tap buttons below to modify values or trigger dispatch:*",
     );
 
     text
@@ -164,13 +166,15 @@ pub fn render_dashboard_buttons(state: &DashboardState) -> serde_json::Value {
     ]);
 
     if target.has_extensions {
+        let exts = get_extensions(target_key);
+        let decoded = decode_bitmask(&state.mask_hex, exts);
         buttons.push(vec![
             serde_json::json!({
-                "text": "💉 Custom Tweak URL",
+                "text": if state.tweak.is_some() { "💉 Tweak: Custom ✅" } else { "💉 Set Tweak URL" },
                 "callback_data": format!("ask:tweak:{}", target_key)
             }),
             serde_json::json!({
-                "text": "🧩 Extensions",
+                "text": format!("🧩 Extensions ({}/{})", decoded.enabled_count, decoded.total_count),
                 "callback_data": format!("exts:{}:{}", target_key, state.mask_hex)
             }),
         ]);
@@ -185,7 +189,7 @@ pub fn render_dashboard_buttons(state: &DashboardState) -> serde_json::Value {
 
     buttons.push(vec![
         serde_json::json!({
-            "text": "◀️ Back",
+            "text": "◀️ Change App",
             "callback_data": "nav:main"
         }),
         serde_json::json!({
@@ -202,12 +206,13 @@ pub fn render_build_success_card(
     _inputs: &serde_json::Value,
 ) -> (String, serde_json::Value) {
     let text = format!(
-        "✅ **WORKFLOW DISPATCH SUCCESSFUL**\n\
-         ──────────────────────────────\n\
-         📦 **Target:** `{}`\n\
-         📄 **Workflow:** `{}`\n\
-         ──────────────────────────────\n\
-         ⚡ *GitHub Actions runner is initializing... Click below to track execution.*",
+        "╭─ 🚀 **WORKFLOW DISPATCH SUCCESSFUL**\n\
+         ├──────────────────────────────\n\
+         │ 📦 **Target:**   `{}`\n\
+         │ 📄 **Workflow:** `{}`\n\
+         │ ⚡ **Status:**   `Queued on macOS runner`\n\
+         │\n\
+         ╰─ 💡 *Cloud runner is compiling tweaks. Click below to track progress.*",
         target.name, target.workflow
     );
 
@@ -220,8 +225,8 @@ pub fn render_build_success_card(
         ],
         [
             {
-                "text": "🌐 View Repository",
-                "url": format!("https://github.com/{}", target.repo)
+                "text": "🌐 View Live Logs on GitHub",
+                "url": format!("https://github.com/{}/actions", target.repo)
             }
         ]
     ]);
@@ -255,16 +260,16 @@ pub fn render_status_card(config: &AppConfig, account_name: &str) -> String {
     };
 
     format!(
-        "🛡️ **CLOUD SYNC ENGINE STATUS**\n\
-         ──────────────────────────────\n\
-         🤖 **Telegram Bot:** `{}`\n\
-         ☁️ **Dropbox Account:** `{}`\n\
-         📁 **IPA Vault:** `{}` (Cap: {} files)\n\
-         📁 **DEB Vault:** `{}` (Cap: {} files)\n\
-         📦 **Chunk Size:** `{} MB`\n\
-         🛡️ **Privacy Shield:** `{}`\n\
-         ──────────────────────────────\n\
-         ⚡ *Engine is fully operational.*",
+        "╭─ 📊 **SYSTEM STATUS & METRICS**\n\
+         ├──────────────────────────────\n\
+         │ 🤖 **Telegram Bot:**   `{}`\n\
+         │ ☁️ **Dropbox Vault:**  `{}`\n\
+         │ 📁 **IPA Vault:**      `{}` (Cap: {} files)\n\
+         │ 📁 **DEB Vault:**      `{}` (Cap: {} files)\n\
+         │ 📦 **Chunk Size:**     `{} MB blocks`\n\
+         │ 🛡️ **Privacy Shield:** `{}`\n\
+         │\n\
+         ╰─ ⚡ *Native engine is fully operational.*",
         bot_str,
         dbx_str,
         ipa_str,

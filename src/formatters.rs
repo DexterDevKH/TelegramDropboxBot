@@ -42,14 +42,14 @@ pub fn format_eta(seconds: f64) -> String {
     }
 }
 
-/// Renders a sleek visual block progress bar: [████████░░░░] 66.7%
+/// Renders an ultra-sleek visual block progress bar: ▰▰▰▰▰▰▰▰▱▱▱▱ 66.7%
 pub fn render_progress_bar(percent: f64, bar_length: usize) -> String {
     let clamped = percent.clamp(0.0, 100.0);
     let filled = ((bar_length as f64) * (clamped / 100.0)).round() as usize;
     let filled = filled.min(bar_length);
     let unfilled = bar_length.saturating_sub(filled);
-    let bar = format!("{}{}", "█".repeat(filled), "░".repeat(unfilled));
-    format!("[{}] {:.1}%", bar, clamped)
+    let bar = format!("{}{}", "▰".repeat(filled), "▱".repeat(unfilled));
+    format!("{} {:.1}%", bar, clamped)
 }
 
 /// Sanitizes filename for cross-platform cloud storage safety.
@@ -197,7 +197,8 @@ impl SpeedTracker {
         if self.smoothed_speed == 0.0 {
             self.smoothed_speed = instant_speed;
         } else {
-            self.smoothed_speed = (self.alpha * instant_speed) + ((1.0 - self.alpha) * self.smoothed_speed);
+            self.smoothed_speed =
+                (self.alpha * instant_speed) + ((1.0 - self.alpha) * self.smoothed_speed);
         }
 
         self.last_time = Some(now);
@@ -219,7 +220,10 @@ pub fn parse_artifact_url(url: &str) -> Option<ArtifactUrlInfo> {
     if url.is_empty() {
         return None;
     }
-    let re1 = Regex::new(r"https?://github\.com/([^/]+)/([^/]+)/(?:actions/runs/\d+|suites/\d+)/artifacts/(\d+)").ok()?;
+    let re1 = Regex::new(
+        r"https?://github\.com/([^/]+)/([^/]+)/(?:actions/runs/\d+|suites/\d+)/artifacts/(\d+)",
+    )
+    .ok()?;
     if let Some(caps) = re1.captures(url) {
         let owner = caps.get(1)?.as_str().to_string();
         let repo = caps.get(2)?.as_str().to_string();
@@ -232,7 +236,9 @@ pub fn parse_artifact_url(url: &str) -> Option<ArtifactUrlInfo> {
         });
     }
 
-    let re2 = Regex::new(r"https?://api\.github\.com/repos/([^/]+)/([^/]+)/actions/artifacts/(\d+)").ok()?;
+    let re2 =
+        Regex::new(r"https?://api\.github\.com/repos/([^/]+)/([^/]+)/actions/artifacts/(\d+)")
+            .ok()?;
     if let Some(caps) = re2.captures(url) {
         let owner = caps.get(1)?.as_str().to_string();
         let repo = caps.get(2)?.as_str().to_string();
@@ -281,14 +287,20 @@ pub fn parse_content_disposition_filename(cd_header: &str) -> Option<String> {
     }
     let re_star = Regex::new(r"(?i)filename\*=(?:UTF-8''|utf-8'')([^;]+)").ok()?;
     if let Some(caps) = re_star.captures(cd_header) {
-        let raw = caps.get(1)?.as_str().trim_matches(|c| c == '"' || c == '\'' || c == ' ');
+        let raw = caps
+            .get(1)?
+            .as_str()
+            .trim_matches(|c| c == '"' || c == '\'' || c == ' ');
         let unquoted = urlencoding_decode(raw);
         return Some(sanitize_filename(&unquoted));
     }
 
     let re_std = Regex::new(r#"(?i)filename="?([^";]+)"?"#).ok()?;
     if let Some(caps) = re_std.captures(cd_header) {
-        let raw = caps.get(1)?.as_str().trim_matches(|c| c == '"' || c == '\'' || c == ' ');
+        let raw = caps
+            .get(1)?
+            .as_str()
+            .trim_matches(|c| c == '"' || c == '\'' || c == ' ');
         let unquoted = urlencoding_decode(raw);
         return Some(sanitize_filename(&unquoted));
     }
@@ -466,9 +478,12 @@ pub fn extract_ipa_bundle_id(file_path: &Path) -> Option<String> {
             let mut plist_bytes = Vec::new();
             let mut reader = entry;
             if reader.read_to_end(&mut plist_bytes).is_ok() {
-                if let Ok(plist_val) = plist::Value::from_reader(std::io::Cursor::new(plist_bytes)) {
+                if let Ok(plist_val) = plist::Value::from_reader(std::io::Cursor::new(plist_bytes))
+                {
                     if let Some(dict) = plist_val.as_dictionary() {
-                        if let Some(bundle_id) = dict.get("CFBundleIdentifier").and_then(|v| v.as_string()) {
+                        if let Some(bundle_id) =
+                            dict.get("CFBundleIdentifier").and_then(|v| v.as_string())
+                        {
                             return Some(bundle_id.trim().to_string());
                         }
                     }
@@ -490,7 +505,8 @@ pub fn match_app_bundle(identifier_or_name: &str) -> Option<&'static str> {
     if clean.contains("com.google.ios.youtubemusic")
         || clean.contains("youtubemusic")
         || clean.contains("dtmusic")
-        || (clean.contains("music") && (clean.contains("youtube") || clean.contains("yt") || clean.contains("dextube")))
+        || (clean.contains("music")
+            && (clean.contains("youtube") || clean.contains("yt") || clean.contains("dextube")))
     {
         return Some("com.google.ios.youtubemusic");
     }
@@ -507,4 +523,3 @@ pub fn match_app_bundle(identifier_or_name: &str) -> Option<&'static str> {
 
     None
 }
-

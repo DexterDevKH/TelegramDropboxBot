@@ -245,43 +245,43 @@ pub async fn check_all_ios_versions(
 pub fn format_version_alert_text(app_info: &IosAppInfo, prev_version: Option<&str>) -> String {
     let prev_str = prev_version
         .map(|v| format!("`{}`", v))
-        .unwrap_or_else(|| "Initial Detection".to_string());
+        .unwrap_or_else(|| "`Initial Detection`".to_string());
 
     let mut notes = app_info.release_notes.trim().to_string();
-    if notes.chars().count() > 400 {
-        notes = notes.chars().take(397).collect::<String>() + "...";
+    if notes.chars().count() > 300 {
+        notes = notes.chars().take(297).collect::<String>() + "...";
     }
 
     format!(
-        "🚨 **NEW IOS VERSION DETECTED!**\n\
-         ──────────────────────────────\n\
-         {} **App:** {}\n\
-         🆔 **Bundle ID:** `{}`\n\
-         🆕 **New Version:** `{}`\n\
-         ⏮️ **Previous Version:** {}\n\
-         📅 **Release Date:** `{}`\n\
-         ──────────────────────────────\n\
-         📝 **Release Notes:**\n\
-         {}\n\
-         ──────────────────────────────\n\
-         💡 *A new official iOS version is available! Tap below to build your updated IPA.*",
+        "╭─ 🍎 **NEW IOS RELEASE DETECTED!**\n\
+         ├──────────────────────────────\n\
+         │ {} **Application:** {}\n\
+         │ 🆔 **Bundle ID:**   `{}`\n\
+         │ 🆕 **New Version:** `{}`\n\
+         │ ⏮️ **Previous:**    {}\n\
+         │ 📅 **Release Date:** `{}`\n\
+         │\n\
+         ├─ 📝 **Release Notes**\n\
+         │ {}\n\
+         │\n\
+         ╰─ 💡 *Official release detected. Tap below to trigger an updated build.*",
         app_info.icon,
         app_info.app_name,
         app_info.bundle_id,
         app_info.version,
         prev_str,
         app_info.release_date,
-        notes
+        notes.replace('\n', "\n│ ")
     )
 }
 
 pub fn format_version_status_text(apps_data: &[IosAppInfo]) -> String {
     let mut lines = vec![
-        "🍎 **IOS APP STORE VERSION MONITOR**".to_string(),
-        "──────────────────────────────".to_string(),
+        "╭─ 🍎 **IOS APP STORE VERSION MONITOR**".to_string(),
+        "├──────────────────────────────".to_string(),
     ];
 
-    for app in apps_data {
+    for (idx, app) in apps_data.iter().enumerate() {
         let targets_str = app
             .target_keys
             .iter()
@@ -290,18 +290,22 @@ pub fn format_version_status_text(apps_data: &[IosAppInfo]) -> String {
             .join(", ");
 
         lines.push(format!(
-            "{} **{}**\n\
-             • 🆔 **Bundle ID:** `{}`\n\
-             • 🏷️ **App Store Version:** `{}`\n\
-             • 📅 **Released:** `{}`\n\
-             • 🛠️ **Workflow Targets:** {}\n",
+            "│ {} **{}**\n\
+             │  • 🆔 **Bundle ID:** `{}`\n\
+             │  • 🏷️ **Version:**   `{}`\n\
+             │  • 📅 **Released:**  `{}`\n\
+             │  • 🛠️ **Targets:**   {}",
             app.icon, app.app_name, app.bundle_id, app.version, app.release_date, targets_str
         ));
+
+        if idx + 1 < apps_data.len() {
+            lines.push("│".to_string());
+        }
     }
 
     lines.push(
-        "──────────────────────────────\n\
-         ⚡ *Auto-check monitor is active. You will receive an instant alert when YouTube or YouTube Music gets updated on iOS.*"
+        "│\n\
+         ╰─ ⚡ *24/7 monitor active. Instant alerts dispatched upon App Store updates.*"
             .to_string(),
     );
 

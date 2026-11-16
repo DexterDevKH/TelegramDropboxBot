@@ -56,7 +56,10 @@ export async function handleCallbackQuery(callbackQuery, env, ctx) {
       env.TELEGRAM_BOT_TOKEN,
       cbChatId,
       cbMessageId,
-      "🚫 **BUILD REQUEST CANCELLED**\n──────────────────────────────\nNo workflow dispatch was initiated."
+      "╭─ 🚫 **BUILD REQUEST CANCELLED**\n" +
+      "├──────────────────────────────\n" +
+      "│ No workflow dispatch was initiated.\n" +
+      "╰─ 💡 *Send /build anytime to start a new build.*"
     );
     await clearSession(env, cbChatId);
     return new Response("OK", { status: 200 });
@@ -89,10 +92,13 @@ export async function handleCallbackQuery(callbackQuery, env, ctx) {
     const promptTag = createPromptMetadataTag("secret_tweak", targetKey, dashMsgId, maskHex);
 
     const promptLabel =
-      `🔐 **INPUT: SECRET TWEAK ENV (TWEAK_URL)**\n──────────────────────────────\n` +
-      `Target: \`${repoLabel}\`\n\n` +
-      `Please reply with your direct tweak \`.deb\` URL.\n` +
-      `It will be securely encrypted via Libsodium (X25519) and updated directly in GitHub repository secrets!`;
+      `╭─ 🔐 **INPUT: SECRET TWEAK ENV (TWEAK_URL)**\n` +
+      `├──────────────────────────────\n` +
+      `│ 📦 **Target:** \`${repoLabel}\`\n` +
+      `│\n` +
+      `│ Reply with your direct tweak \`.deb\` URL.\n` +
+      `│ It will be encrypted via Libsodium (X25519) and pushed to GitHub Secrets.\n` +
+      `╰─ 💡 *Type /cancel to abort.*`;
 
     const sentPrompt = await sendMessage(
       env.TELEGRAM_BOT_TOKEN,
@@ -189,10 +195,11 @@ export async function handleCallbackQuery(callbackQuery, env, ctx) {
       env.TELEGRAM_BOT_TOKEN,
       cbChatId,
       mid,
-      `⚙️ **CONFIGURE EXTENSIONS: ${target.name}**\n` +
-      `──────────────────────────────\n` +
-      `Tap any extension below to toggle it **On (✅)** or **Off (❌)**.\n` +
-      `When satisfied, tap **[ 💾 Save & Back ]** below:`,
+      `╭─ ⚙️ **CONFIGURE EXTENSIONS: ${target.name}**\n` +
+      `├──────────────────────────────\n` +
+      `│ Tap any extension below to toggle On (✅) or Off (❌).\n` +
+      `│ Current state is saved automatically in a stateless bitmask.\n` +
+      `╰─ 💾 *Tap [ Save & Return ] when finished:*`,
       { reply_markup: { inline_keyboard: kb } }
     );
     return new Response("OK", { status: 200 });
@@ -304,17 +311,44 @@ export async function handleCallbackQuery(callbackQuery, env, ctx) {
     let placeholder = "";
 
     if (field === "ipa") {
-      promptLabel = `🔗 **INPUT: DECRYPTED IPA URL**\n──────────────────────────────\nTarget: \`${target.name}\`\n\nPlease reply to this message with the direct download URL for the decrypted IPA file.`;
+      promptLabel =
+        `╭─ 🔗 **INPUT: DECRYPTED IPA URL**\n` +
+        `├──────────────────────────────\n` +
+        `│ 📦 **Target:** \`${target.name}\`\n` +
+        `│\n` +
+        `│ Reply with the direct download URL for the decrypted IPA file.\n` +
+        `╰─ 💡 *Type /cancel to abort.*`;
       placeholder = "Paste direct IPA download URL...";
     } else if (field === "name") {
-      promptLabel = `🏷️ **INPUT: APP DISPLAY NAME**\n──────────────────────────────\nTarget: \`${target.name}\`\nCurrent: \`${session.name || target.defaultInputs?.display_name}\`\n\nPlease reply with your desired app name (e.g. \`My YouTube\`).`;
+      promptLabel =
+        `╭─ 🏷️ **INPUT: APP DISPLAY NAME**\n` +
+        `├──────────────────────────────\n` +
+        `│ 📦 **Target:**  \`${target.name}\`\n` +
+        `│ 📋 **Current:** \`${session.name || target.defaultInputs?.display_name}\`\n` +
+        `│\n` +
+        `│ Reply with your desired app name (e.g. \`My YouTube\`).\n` +
+        `╰─ 💡 *Type /cancel to abort.*`;
       placeholder = "e.g. My YouTube";
     } else if (field === "bundle") {
-      promptLabel = `🆔 **INPUT: BUNDLE IDENTIFIER**\n──────────────────────────────\nTarget: \`${target.name}\`\nCurrent: \`${session.bundle || target.defaultInputs?.bundle_id}\`\n\nPlease reply with your desired bundle identifier (e.g. \`com.my.youtube\`).`;
+      promptLabel =
+        `╭─ 🆔 **INPUT: BUNDLE IDENTIFIER**\n` +
+        `├──────────────────────────────\n` +
+        `│ 📦 **Target:**  \`${target.name}\`\n` +
+        `│ 📋 **Current:** \`${session.bundle || target.defaultInputs?.bundle_id}\`\n` +
+        `│\n` +
+        `│ Reply with your desired bundle identifier (e.g. \`com.my.youtube\`).\n` +
+        `╰─ 💡 *Type /cancel to abort.*`;
       placeholder = "e.g. com.my.youtube";
     } else if (field === "tweak") {
-      promptLabel = `💉 **INPUT: CUSTOM TWEAK URL**\n──────────────────────────────\nTarget: \`${target.name}\`\nCurrent: \`${session.tweak || "Default (built-in)"}\`\n\nPlease reply with a direct link to your custom deb/dylib, or type \`default\` to clear.`;
-      placeholder = "Paste custom tweak .deb/.dylib URL or type default";
+      promptLabel =
+        `╭─ 💉 **INPUT: CUSTOM TWEAK URL**\n` +
+        `├──────────────────────────────\n` +
+        `│ 📦 **Target:**  \`${target.name}\`\n` +
+        `│ 📋 **Current:** \`${session.tweak || "Default (built-in)"}\`\n` +
+        `│\n` +
+        `│ Reply with a direct link to custom .deb, or type \`default\` to reset.\n` +
+        `╰─ 💡 *Type /cancel to abort.*`;
+      placeholder = "Paste custom tweak .deb URL or type default";
     }
 
     const metaTag = createPromptMetadataTag(field, targetKey, mid, maskHex);
@@ -322,7 +356,7 @@ export async function handleCallbackQuery(callbackQuery, env, ctx) {
     const sentPrompt = await sendMessage(
       env.TELEGRAM_BOT_TOKEN,
       cbChatId,
-      `${metaTag}${promptLabel}\n\n👉 *Reply directly with your value (or type /cancel to abort):*`,
+      `${metaTag}${promptLabel}`,
       {
         reply_to_message_id: mid,
         reply_markup: {
