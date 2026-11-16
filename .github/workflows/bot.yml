@@ -51,17 +51,34 @@ jobs:
         with:
           path: target/release/telegram_dropbox_bot
           key: engine-bin-${{ runner.os }}-${{ hashFiles('Cargo.lock', 'Cargo.toml', 'src/**') }}
+          restore-keys: |
+            engine-bin-${{ runner.os }}-
+
+      - name: Check Binary Status
+        id: check-bin
+        run: |
+          if [ -f target/release/telegram_dropbox_bot ]; then
+            chmod +x target/release/telegram_dropbox_bot
+            if ./target/release/telegram_dropbox_bot --help >/dev/null 2>&1; then
+              echo "ready=true" >> $GITHUB_OUTPUT
+              echo "✔ Pre-built binary verified and ready to execute."
+            else
+              echo "ready=false" >> $GITHUB_OUTPUT
+            fi
+          else
+            echo "ready=false" >> $GITHUB_OUTPUT
+          fi
 
       - name: Setup Rust Toolchain
-        if: steps.binary-cache.outputs.cache-hit != 'true'
+        if: steps.check-bin.outputs.ready != 'true'
         uses: dtolnay/rust-toolchain@stable
 
       - name: Rust Cache Action
-        if: steps.binary-cache.outputs.cache-hit != 'true'
+        if: steps.check-bin.outputs.ready != 'true'
         uses: Swatinem/rust-cache@v2
 
       - name: Compile Native Core Engine
-        if: steps.binary-cache.outputs.cache-hit != 'true'
+        if: steps.check-bin.outputs.ready != 'true'
         run: |
           echo "::group::📦 Compiling High-Performance Native Core Engine"
           cargo build --release
