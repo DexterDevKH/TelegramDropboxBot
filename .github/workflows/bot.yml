@@ -192,20 +192,20 @@ jobs:
         run: |
           ./target/release/telegram_dropbox_bot
 
-      - name: Auto-Purge Completed Workflow Runs
-        if: always()
-        shell: bash
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GH_REPO: ${{ github.repository }}
-          GH_NO_PROMPT: "1"
-        run: |
-          echo "::group::🧹 Auto-Purging Completed Sync Pipeline Run Logs"
-          gh run list --repo "${{ github.repository }}" --workflow=bot.yml --status=completed --json databaseId -q '.[].databaseId' | while read -r run_id; do
-            if [ -n "$run_id" ]; then
-              echo "Purging completed run: $run_id"
-              gh api -X DELETE "repos/${{ github.repository }}/actions/runs/$run_id" || true
-            fi
-          done
-          echo "✔ Complete: All completed run logs and history have been purged."
-          echo "::endgroup::"
+      # - name: Auto-Purge Completed Workflow Runs
+      #   if: always()
+      #   shell: bash
+      #   env:
+      #     GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      #     GH_REPO: ${{ github.repository }}
+      #     GH_NO_PROMPT: "1"
+      #   run: |
+      #     echo "::group::🧹 Auto-Purging Completed Sync Pipeline Run Logs"
+      #     gh run list --repo "${{ github.repository }}" --workflow=bot.yml --status=completed --json databaseId -q '.[].databaseId' | while read -r run_id; do
+      #       if [ -n "$run_id" ]; then
+      #         echo "Purging completed run: $run_id"
+      #         gh api -X DELETE "repos/${{ github.repository }}/actions/runs/$run_id" || true
+      #       fi
+      #     done
+      #     echo "✔ Complete: All completed run logs and history have been purged."
+      #     echo "::endgroup::"
