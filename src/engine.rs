@@ -421,12 +421,35 @@ impl SyncApp {
                     "Failed to unzip artifact: archive contains no valid files.".to_string()
                 );
             }
-        } else if let Some(fid) = req.telegram_file_id {
-            self.tg
-                .download_file_by_id(fid, &download_target, |c, t| {
+        } else if req.telegram_file_id.is_some() || (req.chat_id != 0 && req.message_id != 0 && req.raw_url.is_empty()) {
+            let file_size_hint = req.file_size_override;
+            let mut download_success = false;
+
+            // If file size is within the 20 MB Telegram HTTP Bot API limit, attempt fast HTTP download first
+            if let Some(fid) = req.telegram_file_id {
+                if file_size_hint > 0 && file_size_hint <= 20 * 1024 * 1024 {
+                    info!("File size ({} bytes) within Bot API 20MB limit. Attempting HTTP download.", file_size_hint);
+                    match self.tg.download_file_by_id(fid, &download_target, |c, t| {
+                        dl_reporter.update(c, t);
+                    }).await {
+                        Ok(_) => {
+                            download_success = true;
+                        }
+                        Err(e) => {
+                            warn!("HTTP getFile download failed ({}), falling back to high-speed MTProto binary ingestion.", e);
+                        }
+                    }
+                }
+            }
+
+            // If not downloaded yet (file > 20 MB or getFile failed), invoke MTProto download via Telethon
+            if !download_success {
+                info!("Executing high-speed MTProto binary ingestion for Telegram media (size: {} bytes)...", file_size_hint);
+                self.download_via_mtproto(chat_id, message_id, &download_target, |c, t| {
                     dl_reporter.update(c, t);
                 })
                 .await?;
+            }
 
             if final_filename.to_lowercase().ends_with(".zip")
                 || (!final_filename.to_lowercase().ends_with(".ipa")
@@ -643,6 +666,94 @@ impl SyncApp {
         );
 
         Ok(())
+    }
+
+    pub async fn download_via_mtproto<F>(
+        &self,
+        chat_id: i64,
+        message_id: i64,
+        dest_path: &std::path::Path,
+        mut progress_cb: F,
+    ) -> Result<u64, String>
+    where
+        F: FnMut(u64, u64),
+    {
+        use tokio::io::{AsyncBufReadExt, BufReader};
+        use tokio::process::Command;
+
+        let script_candidates = [
+            std::path::PathBuf::from("scripts/mtproto_download.py"),
+            std::path::PathBuf::from("./scripts/mtproto_download.py"),
+            std::env::current_dir()
+                .unwrap_or_default()
+                .join("scripts")
+                .join("mtproto_download.py"),
+        ];
+
+        let script_path = script_candidates
+            .iter()
+            .find(|p| p.exists())
+            .cloned()
+            .unwrap_or_else(|| std::path::PathBuf::from("scripts/mtproto_download.py"));
+
+        let python_cmd = if cfg!(windows) { "python" } else { "python3" };
+
+        let mut child = Command::new(python_cmd)
+            .arg(&script_path)
+            .arg(chat_id.to_string())
+            .arg(message_id.to_string())
+            .arg(dest_path.to_string_lossy().as_ref())
+            .env("TELEGRAM_API_ID", self.config.telegram_api_id.to_string())
+            .env("TELEGRAM_API_HASH", &self.config.telegram_api_hash)
+            .env("TELEGRAM_BOT_TOKEN", &self.config.telegram_bot_token)
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+            .map_err(|e| format!("Failed to spawn MTProto download process: {}", e))?;
+
+        if let Some(stdout) = child.stdout.take() {
+            let mut reader = BufReader::new(stdout).lines();
+            while let Ok(Some(line)) = reader.next_line().await {
+                if let Some(rest) = line.strip_prefix("PROGRESS:") {
+                    let parts: Vec<&str> = rest.split(':').collect();
+                    if parts.len() == 2 {
+                        if let (Ok(curr), Ok(tot)) = (parts[0].parse::<u64>(), parts[1].parse::<u64>()) {
+                            progress_cb(curr, tot);
+                        }
+                    }
+                } else if line == "DONE" {
+                    info!("MTProto download completed signal received.");
+                } else {
+                    info!("[MTProto] {}", line);
+                }
+            }
+        }
+
+        let status = child
+            .wait()
+            .await
+            .map_err(|e| format!("MTProto download process error: {}", e))?;
+
+        if !status.success() {
+            let mut err_msg = String::new();
+            if let Some(stderr) = child.stderr.take() {
+                let mut reader = BufReader::new(stderr).lines();
+                let mut lines = Vec::new();
+                while let Ok(Some(line)) = reader.next_line().await {
+                    lines.push(line);
+                }
+                err_msg = lines.join("\n");
+            }
+            return Err(format!(
+                "MTProto download failed (exit {:?}): {}",
+                status.code(),
+                err_msg
+            ));
+        }
+
+        let meta = std::fs::metadata(dest_path)
+            .map_err(|e| format!("Failed to verify downloaded MTProto file: {}", e))?;
+        Ok(meta.len())
     }
 
     pub async fn run_tracker(

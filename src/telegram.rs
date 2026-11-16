@@ -379,9 +379,10 @@ impl TelegramService {
             .await
             .map_err(|e| format!("getFile parse error: {}", e))?;
 
-        let file_info = body
-            .result
-            .ok_or_else(|| "Missing file result in getFile".to_string())?;
+        let file_info = body.result.ok_or_else(|| {
+            body.description
+                .unwrap_or_else(|| "Missing file result in getFile".to_string())
+        })?;
         let file_path = file_info
             .file_path
             .ok_or_else(|| "Missing file_path in getFile".to_string())?;

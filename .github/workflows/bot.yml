@@ -87,6 +87,10 @@ jobs:
       - name: Ensure Engine Binary Executable
         run: chmod +x target/release/telegram_dropbox_bot
 
+      - name: Setup MTProto Engine (Telethon)
+        run: |
+          pip install --no-cache-dir telethon
+
       - name: Pre-Flight Secrets & Privacy Shield Audit
         shell: bash
         env:
