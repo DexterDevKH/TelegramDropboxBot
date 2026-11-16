@@ -31,10 +31,6 @@ export function renderMainMenuButtons() {
       { text: "🎵 DTMusicUltimate", callback_data: "sel:dtmusic" },
     ],
     [
-      { text: "🔐 Secret Tweak", callback_data: "settweak_menu" },
-      { text: "🍎 App Store Versions", callback_data: "check_versions" },
-    ],
-    [
       { text: "❌ Dismiss", callback_data: "cancel" },
     ],
   ];
