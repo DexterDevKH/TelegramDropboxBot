@@ -47,6 +47,13 @@ node_modules/
 temp/
 .ios_versions_cache.json
 
+# Rust artifacts
+target/
+*.rs.bk
+
+# Legacy Python source backup
+python_src/
+
 # OS specific
 .DS_Store
 Thumbs.db

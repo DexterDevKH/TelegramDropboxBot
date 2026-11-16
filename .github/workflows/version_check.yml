@@ -21,14 +21,15 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
+      - name: Setup Rust Toolchain
+        uses: dtolnay/rust-toolchain@stable
 
-      - name: Run iOS Version Monitor & Alert Service
+      - name: Rust Cache Action
+        uses: Swatinem/rust-cache@v2
+
+      - name: Run iOS Version Monitor & Alert Service (Native Rust Core)
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           AUTHORIZED_USER_IDS: ${{ secrets.AUTHORIZED_USER_IDS }}
         run: |
-          python -m src.version_checker
+          cargo run --release -- --check-versions

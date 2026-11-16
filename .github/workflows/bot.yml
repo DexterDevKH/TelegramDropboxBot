@@ -45,21 +45,16 @@ jobs:
       - name: Checkout Source Code
         uses: actions/checkout@v4
 
-      - name: Initialize Python 3.11 Runtime
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-          cache: 'pip'
+      - name: Setup Rust Toolchain
+        uses: dtolnay/rust-toolchain@stable
 
-      - name: Setup uv (Ultra-Fast Package Manager)
-        uses: astral-sh/setup-uv@v5
-        with:
-          enable-cache: true
+      - name: Rust Cache Action
+        uses: Swatinem/rust-cache@v2
 
-      - name: Install Production Dependencies
+      - name: Compile Native Core Engine
         run: |
-          echo "::group::📦 Installing Dependencies (High-Speed Engine)"
-          uv pip install --system -r requirements.txt || pip install -r requirements.txt
+          echo "::group::📦 Compiling High-Performance Native Core Engine"
+          cargo build --release
           echo "::endgroup::"
 
       - name: Pre-Flight Secrets & Privacy Shield Audit
@@ -137,13 +132,13 @@ jobs:
         shell: bash
         run: |
           cat << 'EOF' >> $GITHUB_STEP_SUMMARY
-          # ⚡ Telegram to Dropbox Sync Pipeline (v3.0.0)
+          # ⚡ Telegram to Dropbox Sync Pipeline (v3.1.0 Native Rust Core)
 
           ### 🛰️ Runner Specifications & Status
           | Property | Value |
           | :--- | :--- |
           | **Host Platform** | Ubuntu Linux (`ubuntu-latest`) |
-          | **Package Manager** | `uv` (Ultra-fast Rust package engine) + Python 3.11 |
+          | **Engine Runtime** | Native Rust Core (v3.1.0) via Cargo, Reqwest, Zip & Libsodium |
           | **Trigger Source** | `${{ github.event_name }}` |
           | **Concurrency Policy** | Queue per message (`cancel-in-progress: false`) |
           | **Privacy Shield** | 🛡️ Active (Filenames & user identities masked) |
@@ -157,7 +152,7 @@ jobs:
           | **Chunk Size** | `8 MB` | Streaming session upload chunk size |
           | **Direct Copy API** | `Telegram Bot API v7.0+` | Native one-tap clipboard copy buttons |
 
-          > 💡 **Active Service:** The MTProto engine is now executing ingestion and streaming chunked upload to Dropbox.
+          > 💡 **Active Service:** The native Rust core is now executing ingestion and streaming chunked upload to Dropbox.
           EOF
 
       - name: Launch Cloud Sync / Build Tracker Daemon
@@ -195,7 +190,7 @@ jobs:
           LOG_LEVEL: ${{ github.event.inputs.log_level || 'INFO' }}
           GH_PAT: ${{ secrets.GH_PAT || secrets.PAT || secrets.GITHUB_TOKEN }}
         run: |
-          python bot.py
+          ./target/release/telegram_dropbox_bot || python bot.py
 
       - name: Auto-Purge Completed Workflow Runs
         if: always()

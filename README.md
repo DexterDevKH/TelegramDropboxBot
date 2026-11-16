@@ -1,14 +1,14 @@
 # ⚡ Telegram to Dropbox Cloud Sync & iOS IPA Workflow Builder
 
-[![Engine Version](https://img.shields.io/badge/version-3.0.0-blue.svg)](https://github.com/DexterDevKH/TelegramDropboxBot)
-[![Python](https://img.shields.io/badge/python-3.11%20%7C%203.12%20%7C%203.13-3776AB.svg?logo=python&logoColor=white)](https://www.python.org/)
+[![Engine Version](https://img.shields.io/badge/version-3.1.0-blue.svg)](https://github.com/DexterDevKH/TelegramDropboxBot)
+[![Rust](https://img.shields.io/badge/rust-1.85%2B%20%7C%202021%20edition-DEA584.svg?logo=rust&logoColor=white)](https://www.rust-lang.org/)
 [![Cloudflare Workers](https://img.shields.io/badge/edge-Cloudflare%20Workers-F38020.svg?logo=cloudflare&logoColor=white)](https://workers.cloudflare.com/)
 [![GitHub Actions](https://img.shields.io/badge/ci-GitHub%20Actions-2088FF.svg?logo=githubactions&logoColor=white)](https://github.com/features/actions)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
-An enterprise-grade, serverless cloud pipeline combining high-speed **Telegram-to-Dropbox synchronization** (up to 2.0 GB via Telethon MTProto) and an interactive **iOS IPA GitHub Actions Workflow Builder** (`/build` for DTKACE Plus, DTLite Plus, and DTMusicUltimate).
+An enterprise-grade, serverless cloud pipeline combining high-speed **Telegram-to-Dropbox synchronization** and an interactive **iOS IPA GitHub Actions Workflow Builder** (`/build` for DTKACE Plus, DTLite Plus, and DTMusicUltimate).
 
-Powered by a 24/7 **Cloudflare Worker Global Edge Gateway** (<20ms latency) and on-demand **GitHub Actions CI Runners** (0 idle cost).
+Powered by a high-performance native **Rust core engine** (built with Cargo, Tokio, Reqwest, Zip, and Libsodium SealedBox), a 24/7 **Cloudflare Worker Global Edge Gateway** (<20ms latency), and on-demand **GitHub Actions CI Runners** (0 idle cost).
 
 ---
 
@@ -98,19 +98,22 @@ Powered by a 24/7 **Cloudflare Worker Global Edge Gateway** (<20ms latency) and 
 TelegramDropboxBot/
 ├── .github/
 │   └── workflows/
-│       ├── bot.yml            # Streamlined on-demand CI sync & build tracker pipeline
-│       └── cleanup.yml        # Auto-purge completed workflow runs & history daemon
-├── src/                       # Refactored, high-performance modular Python core engine
-│   ├── __init__.py            # Package root & metadata
-│   ├── config.py              # Strongly-typed configuration loader & validation
-│   ├── constants.py           # Build targets catalog & tweak extensions config
-│   ├── privacy.py             # Privacy shield, log sanitization & GitHub mask registration
-│   ├── formatters.py          # Formats sizes, ETAs, filenames, URLs & bitmasks
-│   ├── dropbox_service.py     # Dropbox OAuth, streaming chunked uploads & FIFO retention
-│   ├── github_service.py      # GitHub Actions workflow dispatch & release inspector
-│   ├── telegram_bot.py        # Telethon client wrapper & safe edit/progress handling
-│   ├── ui.py                  # Presentation cards, buttons & Bot API v7.0+ CopyTextButton
-│   └── engine.py              # Application lifecycle (On-demand runner & daemon modes)
+│       ├── bot.yml            # Streamlined on-demand CI sync & build tracker pipeline (Rust Native)
+│       └── version_check.yml  # Scheduled iOS App Store version monitor & alert daemon
+├── src/                       # High-performance native Rust core engine (v3.1.0)
+│   ├── lib.rs                 # Library exports & public crate interface
+│   ├── main.rs                # Master CLI entrypoint (Clap arguments & runtime switcher)
+│   ├── config.rs              # Strongly-typed configuration loader & validation
+│   ├── constants.rs           # Build targets catalog & tweak extensions config
+│   ├── privacy.rs             # Privacy shield, log sanitization & GitHub mask registration
+│   ├── formatters.rs          # Formats sizes, ETAs, filenames, URLs, bitmasks & ZIP extraction
+│   ├── dropbox.rs             # Dropbox OAuth, chunked streaming sessions, FIFO & auto-rotation
+│   ├── github.rs              # GitHub Actions dispatcher, artifact streamer & Libsodium SealedBox
+│   ├── telegram.rs            # Telegram Bot API client & Bot API v7.0+ CopyTextButton
+│   ├── ui.rs                  # Markdown presentation cards, keyboards & bitmask UI
+│   └── version_checker.rs     # Apple iTunes API version checker & Telegram alert dispatcher
+├── tests/                     # Integration test suite
+│   └── test_native_engine.rs  # End-to-end integration tests (Zip, Plist, Libsodium, etc.)
 ├── webhook/                   # Edge gateway (Cloudflare Worker v2)
 │   ├── targets.js             # Build target catalog & tweak extensions config
 │   ├── state.js               # Stateless bitmask engine & resilient multi-tier session storage
@@ -118,15 +121,11 @@ TelegramDropboxBot/
 │   ├── github.js              # GitHub Actions REST API dispatcher & tracker
 │   ├── ui.js                  # Markdown presentation cards & button matrices
 │   └── worker.js              # Cloudflare Worker master edge router (Fetch & Scheduled)
-├── tests/                     # Unit test suite
-│   ├── test_formatters.py     # Unit tests for formatting and bitmask codecs
-│   ├── test_privacy.py        # Unit tests for privacy shield and masking
-│   └── test_constants.py      # Unit tests for catalog definitions
-├── bot.py                     # Clean CLI & CI entrypoint (delegates to src.engine)
+├── Cargo.toml                 # Cargo dependencies manifest
+├── bot.py                     # Zero-overhead bridge launcher (delegates to target/release)
 ├── get_refresh_token.py       # Dropbox OAuth 2.0 permanent refresh token generator
 ├── wrangler.toml              # Cloudflare Workers configuration
 ├── package.json               # Node.js project manifest & deployment scripts
-├── requirements.txt           # Python production dependencies
 └── .env.example               # Reference environment variables
 ```
 
@@ -199,12 +198,30 @@ curl -F "url=https://telegramdropboxbot.<your-subdomain>.workers.dev" \
 
 ---
 
-## 🧪 Running Unit Tests
+## 🧪 Running Tests & Building Native Core
 
-Run the included unit test suite to verify formatters, bitmask engine, and privacy filters:
+Run the comprehensive Rust unit and integration test suite:
 
 ```bash
-python -m unittest discover -s tests
+cargo test
+```
+
+Build the optimized native release binary:
+
+```bash
+cargo build --release
+```
+
+Run the standalone iOS App Store version checker:
+
+```bash
+cargo run --release -- --check-versions
+```
+
+Update custom tweak secret (`TWEAK_URL`) via command line:
+
+```bash
+cargo run --release -- --set-tweak dtkace https://example.com/custom.deb
 ```
 
 ---
