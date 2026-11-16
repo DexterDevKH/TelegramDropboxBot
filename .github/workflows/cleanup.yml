@@ -1,9 +1,10 @@
 name: Auto-Purge Completed Workflow Runs
 
 on:
-  workflow_run:
-    workflows: ["Telegram to Dropbox Sync Pipeline"]
-    types: [completed]
+  # Temporarily disabled automatic purge so workflow run logs and history are preserved for inspection
+  # workflow_run:
+  #   workflows: ["Telegram to Dropbox Sync Pipeline"]
+  #   types: [completed]
   workflow_dispatch:
 
 permissions:
