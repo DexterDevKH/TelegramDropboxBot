@@ -249,13 +249,12 @@ export async function handleIncomingMessage(message, env, ctx) {
             await sendMessage(
               env.TELEGRAM_BOT_TOKEN,
               chatId,
-              `╭─ ⚠️ **ARTIFACT EXPIRED**\n` +
-              `├──────────────────────────────\n` +
-              `│ 📦 **Artifact:**   \`${meta.name}\`\n` +
-              `│ 📁 **Repository:** \`${artifactRepo}\`\n` +
-              `│ 📅 **Expired At:** \`${meta.expires_at || "Unknown"}\`\n` +
-              `│\n` +
-              `╰─ 💡 *This GitHub Actions artifact has expired and can no longer be downloaded.*`,
+              `⚠️ **ARTIFACT EXPIRED**\n` +
+              `──────────────────────────────\n` +
+              `• 📦 **Artifact:**   \`${meta.name}\`\n` +
+              `• 📁 **Repository:** \`${artifactRepo}\`\n` +
+              `• 📅 **Expired At:** \`${meta.expires_at || "Unknown"}\`\n\n` +
+              `💡 *This GitHub Actions artifact has expired and can no longer be downloaded.*`,
               { reply_to_message_id: messageId }
             );
             return new Response("OK", { status: 200 });
@@ -367,13 +366,12 @@ export async function handleIncomingMessage(message, env, ctx) {
         const statusMsg = await sendMessage(
           env.TELEGRAM_BOT_TOKEN,
           chatId,
-          `╭─ ⏳ **DISPATCHING WORKFLOW...**\n` +
-          `├──────────────────────────────\n` +
-          `│ 📦 **Target:**   \`${target.name}\`\n` +
-          `│ 📄 **Workflow:** \`${target.workflow}\`\n` +
-          `│ 🔗 **IPA URL:**  \`${ipaUrl}\`\n` +
-          `│\n` +
-          `╰─ ⚡ *Triggering GitHub Actions runner...*`,
+          `⏳ **DISPATCHING WORKFLOW...**\n` +
+          `──────────────────────────────\n` +
+          `• 📦 **Target:**   \`${target.name}\`\n` +
+          `• 📄 **Workflow:** \`${target.workflow}\`\n` +
+          `• 🔗 **IPA URL:**  \`${ipaUrl}\`\n\n` +
+          `⚡ *Triggering GitHub Actions runner...*`,
           { reply_to_message_id: messageId }
         );
 

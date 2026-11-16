@@ -33,15 +33,14 @@ impl Default for DashboardState {
 }
 
 pub fn render_main_menu() -> (String, serde_json::Value) {
-    let text = "╭─ 🚀 **GITHUB ACTIONS WORKFLOW BUILDER**\n\
-                ├──────────────────────────────\n\
-                │ Choose a target iOS application to configure:\n\
-                │\n\
-                │ • 🚀 **DTKACE Plus** — Enhanced YouTube (13 modular tweaks)\n\
-                │ • ✨ **DTLite Plus** — Lightweight YouTube (Ad-block, PiP, RYD)\n\
-                │ • 🎵 **DTMusicUltimate** — DexTube Music (Lossless audio mod)\n\
-                │\n\
-                ╰─ 💡 *Select an app button below to customize and build.*";
+    let text = "🚀 **GITHUB ACTIONS WORKFLOW BUILDER**\n\
+                ──────────────────────────────\n\
+                Choose a target iOS application to configure:\n\n\
+                • 🚀 **DTKACE Plus** — Enhanced YouTube (13 modular tweaks)\n\
+                • ✨ **DTLite Plus** — Lightweight YouTube (Ad-block, PiP, RYD)\n\
+                • 🎵 **DTMusicUltimate** — DexTube Music (Lossless audio mod)\n\n\
+                ──────────────────────────────\n\
+                💡 *Select an app button below to customize and build.*";
 
     let buttons = serde_json::json!([
         [
@@ -97,16 +96,15 @@ pub fn render_dashboard_text(state: &DashboardState) -> String {
         .unwrap_or_else(|| "`Default (Built-in)`".to_string());
 
     let mut text = format!(
-        "╭─ 🛠️ **BUILD CONFIGURATION: {}**\n\
-         ├──────────────────────────────\n\
-         │ 📦 **Repository:** `{}`\n\
-         │ 📄 **Workflow:**   `{}`\n\
-         │ ℹ️ *{}*\n\
-         │\n\
-         ├─ 📋 **Parameters**\n\
-         │  • 🔗 **IPA URL:**     {}\n\
-         │  • 🏷️ **App Name:**    {}\n\
-         │  • 🆔 **Bundle ID:**   {}\n",
+        "🛠️ **BUILD CONFIGURATION: {}**\n\
+         ──────────────────────────────\n\
+         • 📦 **Repository:** `{}`\n\
+         • 📄 **Workflow:**   `{}`\n\
+         • ℹ️ *{}*\n\n\
+         📋 **Parameters:**\n\
+         • 🔗 **IPA URL:**     {}\n\
+         • 🏷️ **App Name:**    {}\n\
+         • 🆔 **Bundle ID:**   {}\n",
         target.name,
         target.repo,
         target.workflow,
@@ -117,9 +115,9 @@ pub fn render_dashboard_text(state: &DashboardState) -> String {
     );
 
     if target.has_extensions {
-        text.push_str(&format!("│  • 💉 **Tweak URL:**   {}\n", tweak_display));
+        text.push_str(&format!("• 💉 **Tweak URL:**   {}\n", tweak_display));
         text.push_str(&format!(
-            "│  • 🧩 **Extensions:**  `{}/{} active`",
+            "• 🧩 **Extensions:**  `{}/{} active`",
             decoded.enabled_count, decoded.total_count
         ));
         if !decoded.disabled.is_empty() {
@@ -135,8 +133,8 @@ pub fn render_dashboard_text(state: &DashboardState) -> String {
     }
 
     text.push_str(
-        "│\n\
-         ╰─ 💡 *Tap buttons below to modify values or trigger dispatch:*",
+        "──────────────────────────────\n\
+         💡 *Tap buttons below to modify values or trigger dispatch:*",
     );
 
     text
@@ -206,13 +204,13 @@ pub fn render_build_success_card(
     _inputs: &serde_json::Value,
 ) -> (String, serde_json::Value) {
     let text = format!(
-        "╭─ 🚀 **WORKFLOW DISPATCH SUCCESSFUL**\n\
-         ├──────────────────────────────\n\
-         │ 📦 **Target:**   `{}`\n\
-         │ 📄 **Workflow:** `{}`\n\
-         │ ⚡ **Status:**   `Queued on macOS runner`\n\
-         │\n\
-         ╰─ 💡 *Cloud runner is compiling tweaks. Click below to track progress.*",
+        "🚀 **WORKFLOW DISPATCH SUCCESSFUL**\n\
+         ──────────────────────────────\n\
+         • 📦 **Target:**   `{}`\n\
+         • 📄 **Workflow:** `{}`\n\
+         • ⚡ **Status:**   `Queued on macOS runner`\n\
+         ──────────────────────────────\n\
+         💡 *Cloud runner is compiling tweaks. Click below to track progress.*",
         target.name, target.workflow
     );
 
@@ -260,16 +258,16 @@ pub fn render_status_card(config: &AppConfig, account_name: &str) -> String {
     };
 
     format!(
-        "╭─ 📊 **SYSTEM STATUS & METRICS**\n\
-         ├──────────────────────────────\n\
-         │ 🤖 **Telegram Bot:**   `{}`\n\
-         │ ☁️ **Dropbox Vault:**  `{}`\n\
-         │ 📁 **IPA Vault:**      `{}` (Cap: {} files)\n\
-         │ 📁 **DEB Vault:**      `{}` (Cap: {} files)\n\
-         │ 📦 **Chunk Size:**     `{} MB blocks`\n\
-         │ 🛡️ **Privacy Shield:** `{}`\n\
-         │\n\
-         ╰─ ⚡ *Native engine is fully operational.*",
+        "📊 **SYSTEM STATUS & METRICS**\n\
+         ──────────────────────────────\n\
+         • 🤖 **Telegram Bot:**   `{}`\n\
+         • ☁️ **Dropbox Vault:**  `{}`\n\
+         • 📁 **IPA Vault:**      `{}` (Cap: {} files)\n\
+         • 📁 **DEB Vault:**      `{}` (Cap: {} files)\n\
+         • 📦 **Chunk Size:**     `{} MB blocks`\n\
+         • 🛡️ **Privacy Shield:** `{}`\n\
+         ──────────────────────────────\n\
+         ⚡ *Native engine is fully operational.*",
         bot_str,
         dbx_str,
         ipa_str,

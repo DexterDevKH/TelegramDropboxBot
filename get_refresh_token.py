@@ -14,11 +14,10 @@ import urllib.request
 import webbrowser
 
 def main():
-    print("┌" + "─" * 68 + "┐")
-    print("│ ⚡ DROPBOX OAUTH 2.0 PERMANENT REFRESH TOKEN GENERATOR            │")
-    print("├" + "─" * 68 + "┤")
-    print("│ Generates permanent offline refresh tokens for GitHub Actions CI   │")
-    print("└" + "─" * 68 + "┘\n")
+    print("=" * 70)
+    print("⚡ DROPBOX OAUTH 2.0 PERMANENT REFRESH TOKEN GENERATOR")
+    print("=" * 70)
+    print("Generates permanent offline refresh tokens for GitHub Actions CI\n")
 
     app_key = input("🔑 Enter Dropbox App Key: ").strip()
     app_secret = input("🔒 Enter Dropbox App Secret: ").strip()
@@ -75,22 +74,21 @@ def main():
             refresh_token = payload.get("refresh_token")
 
             if refresh_token:
-                print("\n┌" + "─" * 68 + "┐")
-                print("│ ✅ AUTHORIZATION SUCCESSFUL!                                       │")
-                print("├" + "─" * 68 + "┤")
-                print("│ Add this value to your GitHub Repository Secrets:                  │")
-                print("│ Secret Name: DROPBOX_REFRESH_TOKEN                                 │")
-                print("└" + "─" * 68 + "┘\n")
+                print("\n" + "=" * 70)
+                print("✅ AUTHORIZATION SUCCESSFUL!")
+                print("=" * 70)
+                print("Add this value to your GitHub Repository Secrets:")
+                print("Secret Name: DROPBOX_REFRESH_TOKEN\n")
                 print(f"DROPBOX_REFRESH_TOKEN:\n{refresh_token}\n")
-                print("─" * 70)
+                print("=" * 70)
             else:
                 print("\n⚠️ Warning: No refresh_token returned in OAuth payload.")
                 print("Payload:", json.dumps(payload, indent=2))
     except urllib.error.HTTPError as err:
         err_body = err.read().decode("utf-8", errors="replace")
-        print("\n┌" + "─" * 68 + "┐")
-        print(f"│ ❌ TOKEN EXCHANGE FAILED (HTTP {err.code})                         │")
-        print("└" + "─" * 68 + "┘")
+        print("\n" + "=" * 70)
+        print(f"❌ TOKEN EXCHANGE FAILED (HTTP {err.code})")
+        print("=" * 70)
         print(f"Details: {err_body}\n")
         print("💡 Tip: Ensure App Key and App Secret are correct and authorization code is fresh.")
         sys.exit(1)

@@ -736,11 +736,10 @@ impl DropboxService {
 
     /// Interactive terminal utility to generate permanent Dropbox OAuth 2.0 refresh tokens.
     pub async fn generate_refresh_token_interactive() -> Result<String, String> {
-        println!("┌────────────────────────────────────────────────────────────────────┐");
-        println!("│ ⚡ DROPBOX OAUTH 2.0 PERMANENT REFRESH TOKEN GENERATOR            │");
-        println!("├────────────────────────────────────────────────────────────────────┤");
-        println!("│ Generates permanent offline refresh tokens for GitHub Actions CI   │");
-        println!("└────────────────────────────────────────────────────────────────────┘\n");
+        println!("====================================================================");
+        println!("⚡ DROPBOX OAUTH 2.0 PERMANENT REFRESH TOKEN GENERATOR");
+        println!("====================================================================");
+        println!("Generates permanent offline refresh tokens for GitHub Actions CI\n");
 
         print!("🔑 Enter Dropbox App Key: ");
         io::stdout().flush().map_err(|e| e.to_string())?;
@@ -804,18 +803,13 @@ impl DropboxService {
                 serde_json::from_str(&body).map_err(|e| format!("Invalid JSON response: {}", e))?;
 
             if let Some(refresh_token) = data.get("refresh_token").and_then(|v| v.as_str()) {
-                println!(
-                    "\n┌────────────────────────────────────────────────────────────────────┐"
-                );
-                println!("│ ✅ AUTHORIZATION SUCCESSFUL!                                       │");
-                println!("├────────────────────────────────────────────────────────────────────┤");
-                println!("│ Add this value to your GitHub Repository Secrets:                  │");
-                println!("│ Secret Name: DROPBOX_REFRESH_TOKEN                                 │");
-                println!(
-                    "└────────────────────────────────────────────────────────────────────┘\n"
-                );
+                println!("\n====================================================================");
+                println!("✅ AUTHORIZATION SUCCESSFUL!");
+                println!("====================================================================");
+                println!("Add this value to your GitHub Repository Secrets:");
+                println!("Secret Name: DROPBOX_REFRESH_TOKEN\n");
                 println!("DROPBOX_REFRESH_TOKEN:\n{}\n", refresh_token);
-                println!("──────────────────────────────────────────────────────────────────────");
+                println!("────────────────────────────────────────────────────────────────────");
                 Ok(refresh_token.to_string())
             } else {
                 Err(format!("No refresh_token returned in response: {}", body))

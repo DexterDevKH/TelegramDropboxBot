@@ -1,6 +1,6 @@
 /**
  * UI Presentation Layer for Telegram Interactive Cards & Keyboards (v3.1.0)
- * Ultra-sleek, modern tree-structured cards and inline keyboard grids for Telegram Bot API.
+ * Ultra-sleek, modern native formatting cards and inline keyboard grids for Telegram Bot API.
  */
 
 import { BUILD_TARGETS, getExtensions, getTarget } from "./targets.js";
@@ -11,15 +11,13 @@ import { decodeBitmask } from "./state.js";
  */
 export function renderMainMenuText() {
   return (
-    "╭─ 🚀 **GITHUB ACTIONS WORKFLOW BUILDER**\n" +
-    "├──────────────────────────────\n" +
-    "│ Choose a target iOS application to configure:\n" +
-    "│\n" +
-    "│ • 🚀 **DTKACE Plus** — Enhanced YouTube (13 modular tweaks)\n" +
-    "│ • ✨ **DTLite Plus** — Lightweight YouTube (Ad-block, PiP, RYD)\n" +
-    "│ • 🎵 **DTMusicUltimate** — DexTube Music (Lossless audio mod)\n" +
-    "│\n" +
-    "╰─ 💡 *Select an app button below to customize and build.*"
+    "🚀 **GITHUB ACTIONS WORKFLOW BUILDER**\n" +
+    "──────────────────────────────\n" +
+    "Choose a target iOS application to configure:\n\n" +
+    "• 🚀 **DTKACE Plus** — Enhanced YouTube (13 modular tweaks)\n" +
+    "• ✨ **DTLite Plus** — Lightweight YouTube (Ad-block, PiP, RYD)\n" +
+    "• 🎵 **DTMusicUltimate** — DexTube Music (Lossless audio mod)\n\n" +
+    "💡 *Select an app button below to customize and build.*"
   );
 }
 
@@ -52,7 +50,7 @@ export function renderDashboardText(state) {
 
   let extSection = "";
   if (target.hasExtensions && exts.length > 0) {
-    extSection = `│  • 🧩 **Extensions:**  \`${decoded.enabledCount}/${decoded.totalCount} active\``;
+    extSection = `• 🧩 **Extensions:** \`${decoded.enabledCount}/${decoded.totalCount} active\``;
     if (decoded.disabled.length > 0) {
       const disabledNames = exts
         .filter((e) => decoded.disabled.includes(e.key))
@@ -69,20 +67,18 @@ export function renderDashboardText(state) {
   const tweakDisplay = state.tweak ? `\`${state.tweak}\`` : "`Default (Built-in)`";
 
   return (
-    `╭─ 🛠️ **BUILD CONFIGURATION: ${target.name}**\n` +
-    `├──────────────────────────────\n` +
-    `│ 📦 **Repository:** \`${target.repo}\`\n` +
-    `│ 📄 **Workflow:**   \`${target.workflow}\`\n` +
-    `│ ℹ️ *${target.desc}*\n` +
-    `│\n` +
-    `├─ 📋 **Parameters**\n` +
-    `│  • 🔗 **IPA URL:**     ${ipaDisplay}\n` +
-    `│  • 🏷️ **App Name:**    ${nameDisplay}\n` +
-    `│  • 🆔 **Bundle ID:**   ${bundleDisplay}\n` +
-    (target.hasExtensions ? `│  • 💉 **Tweak URL:**   ${tweakDisplay}\n` : "") +
+    `🛠️ **BUILD CONFIGURATION: ${target.name}**\n` +
+    `──────────────────────────────\n` +
+    `• 📦 **Repository:** \`${target.repo}\`\n` +
+    `• 📄 **Workflow:**   \`${target.workflow}\`\n` +
+    `• ℹ️ *${target.desc}*\n\n` +
+    `📋 **Parameters**\n` +
+    `• 🔗 **IPA URL:**     ${ipaDisplay}\n` +
+    `• 🏷️ **App Name:**    ${nameDisplay}\n` +
+    `• 🆔 **Bundle ID:**   ${bundleDisplay}\n` +
+    (target.hasExtensions ? `• 💉 **Tweak URL:**   ${tweakDisplay}\n` : "") +
     extSection +
-    `│\n` +
-    `╰─ 💡 *Tap buttons below to modify values or trigger dispatch:*`
+    `\n💡 *Tap buttons below to modify values or trigger dispatch:*`
   );
 }
 
@@ -226,15 +222,14 @@ export function renderBuildTrackingCard(target, runId, status, elapsedSecs, runU
   }
 
   const card =
-    `╭─ ⚙️ **BUILD IN PROGRESS: ${target.name}**\n` +
-    `├──────────────────────────────\n` +
-    `│ 📦 **Repository:** \`${target.repo}\`\n` +
-    `│ 📄 **Workflow:**   \`${target.workflow}\`\n` +
-    (runId ? `│ 🆔 **Run ID:**     \`${runId}\`\n` : "") +
-    `│ ⏱️ **Elapsed:**    \`${formatDuration(elapsedSecs)}\`\n` +
-    `│ ⚡ **Status:**     \`${statusBadge}\`\n` +
-    `│\n` +
-    `╰─ ☕ *Compilation executing on cloud runner. Card auto-updates.*`;
+    `⚙️ **BUILD IN PROGRESS: ${target.name}**\n` +
+    `──────────────────────────────\n` +
+    `• 📦 **Repository:** \`${target.repo}\`\n` +
+    `• 📄 **Workflow:**   \`${target.workflow}\`\n` +
+    (runId ? `• 🆔 **Run ID:**     \`${runId}\`\n` : "") +
+    `• ⏱️ **Elapsed:**    \`${formatDuration(elapsedSecs)}\`\n` +
+    `• ⚡ **Status:**     \`${statusBadge}\`\n\n` +
+    `☕ *Compilation executing on cloud runner. Card auto-updates.*`;
 
   const buttons = [
     [
@@ -258,14 +253,13 @@ export function renderBuildCompletedCard(target, release, ipaAsset, elapsedSecs,
   const downloadUrl = ipaAsset?.downloadUrl || release?.htmlUrl || `https://github.com/${target.repo}/releases`;
 
   const card =
-    `╭─ 🎉 **BUILD COMPLETED SUCCESSFULLY!**\n` +
-    `├──────────────────────────────\n` +
-    `│ 🚀 **Target:**   \`${target.name}\`\n` +
-    `│ 📦 **Package:**  \`${assetName}\`${assetSize}\n` +
-    `│ 🏷️ **Tag:**      \`${tagName}\`\n` +
-    `│ ⏱️ **Duration:** \`${formatDuration(elapsedSecs)}\`\n` +
-    `│\n` +
-    `╰─ ✅ *Modified IPA is compiled and ready for download:*`;
+    `🎉 **BUILD COMPLETED SUCCESSFULLY!**\n` +
+    `──────────────────────────────\n` +
+    `• 🚀 **Target:**   \`${target.name}\`\n` +
+    `• 📦 **Package:**  \`${assetName}\`${assetSize}\n` +
+    `• 🏷️ **Tag:**      \`${tagName}\`\n` +
+    `• ⏱️ **Duration:** \`${formatDuration(elapsedSecs)}\`\n\n` +
+    `✅ *Modified IPA is compiled and ready for download:*`;
 
   const buttons = [
     [
@@ -291,15 +285,14 @@ export function renderBuildCompletedCard(target, release, ipaAsset, elapsedSecs,
 export function renderBuildFailedCard(target, runId, conclusion, elapsedSecs, runUrl) {
   const conclusionDisplay = (conclusion || "FAILED").toUpperCase();
   const card =
-    `╭─ ❌ **BUILD FAILED**\n` +
-    `├──────────────────────────────\n` +
-    `│ 🚀 **Target:**     \`${target.name}\`\n` +
-    `│ 📦 **Repository:** \`${target.repo}\`\n` +
-    (runId ? `│ 🆔 **Run ID:**     \`${runId}\`\n` : "") +
-    `│ ⚠️ **Conclusion:** \`${conclusionDisplay}\`\n` +
-    `│ ⏱️ **Elapsed:**    \`${formatDuration(elapsedSecs)}\`\n` +
-    `│\n` +
-    `╰─ 💡 *Compilation failed on the runner. Tap below to inspect logs.*`;
+    `❌ **BUILD FAILED**\n` +
+    `──────────────────────────────\n` +
+    `• 🚀 **Target:**     \`${target.name}\`\n` +
+    `• 📦 **Repository:** \`${target.repo}\`\n` +
+    (runId ? `• 🆔 **Run ID:**     \`${runId}\`\n` : "") +
+    `• ⚠️ **Conclusion:** \`${conclusionDisplay}\`\n` +
+    `• ⏱️ **Elapsed:**    \`${formatDuration(elapsedSecs)}\`\n\n` +
+    `💡 *Compilation failed on the runner. Tap below to inspect logs.*`;
 
   const buttons = [
     [
@@ -316,30 +309,28 @@ export function renderBuildFailedCard(target, runId, conclusion, elapsedSecs, ru
 export function renderBuildSuccessCard(target, inputs, disabledKeys = []) {
   const exts = getExtensions(target.key);
   let card =
-    `╭─ 🚀 **GITHUB ACTION TRIGGERED!**\n` +
-    `├──────────────────────────────\n` +
-    `│ 🚀 **Target:**     \`${target.name}\`\n` +
-    `│ 📦 **Repository:** \`${target.repo}\`\n` +
-    `│ 📄 **Workflow:**   \`${target.workflow}\`\n` +
-    `│ 🔗 **IPA URL:**    \`${inputs.ipa_url}\`\n`;
+    `🚀 **GITHUB ACTION TRIGGERED!**\n` +
+    `──────────────────────────────\n` +
+    `• 🚀 **Target:**     \`${target.name}\`\n` +
+    `• 📦 **Repository:** \`${target.repo}\`\n` +
+    `• 📄 **Workflow:**   \`${target.workflow}\`\n` +
+    `• 🔗 **IPA URL:**    \`${inputs.ipa_url}\`\n`;
 
-  if (inputs.display_name) card += `│ 🏷️ **App Name:**   \`${inputs.display_name}\`\n`;
-  if (inputs.bundle_id) card += `│ 🆔 **Bundle ID:**  \`${inputs.bundle_id}\`\n`;
-  if (inputs.tweak_url) card += `│ 💉 **Tweak URL:**  \`${inputs.tweak_url}\`\n`;
+  if (inputs.display_name) card += `• 🏷️ **App Name:**   \`${inputs.display_name}\`\n`;
+  if (inputs.bundle_id) card += `• 🆔 **Bundle ID:**  \`${inputs.bundle_id}\`\n`;
+  if (inputs.tweak_url) card += `• 💉 **Tweak URL:**  \`${inputs.tweak_url}\`\n`;
 
   if (target.hasExtensions && exts.length > 0) {
     const disabledItems = exts.filter((e) => disabledKeys.includes(e.key));
     const enabledCount = exts.length - disabledItems.length;
     card +=
-      `│ 🧩 **Extensions:** \`${enabledCount}/${exts.length} active\`` +
+      `• 🧩 **Extensions:** \`${enabledCount}/${exts.length} active\`` +
       (disabledItems.length > 0
         ? ` *(Disabled: ${disabledItems.map((e) => e.name).join(", ")})*\n`
         : ` *(All active)*\n`);
   }
 
-  card +=
-    `│\n` +
-    `╰─ ⚡ *Dispatched to macOS runner. Tracking progress in real-time...*`;
+  card += `\n⚡ *Dispatched to macOS runner. Tracking progress in real-time...*`;
 
   const buttons = [
     [
@@ -358,14 +349,13 @@ export function renderBuildSuccessCard(target, inputs, disabledKeys = []) {
  */
 export function renderBuildFailureCard(target, result) {
   return (
-    `╭─ ❌ **WORKFLOW DISPATCH FAILED**\n` +
-    `├──────────────────────────────\n` +
-    `│ 📦 **Repository:** \`${target.repo}\`\n` +
-    `│ 📄 **Workflow:**   \`${target.workflow}\`\n` +
-    `│ ⚠️ **Status Code:** HTTP \`${result.status}\`\n` +
-    `│ 📝 **Details:**     \`${result.error || "Unknown error"}\`\n` +
-    `│\n` +
-    `╰─ 💡 *Verify that your GH_PAT secret has 'repo' or 'actions:write' permissions.*`
+    `❌ **WORKFLOW DISPATCH FAILED**\n` +
+    `──────────────────────────────\n` +
+    `• 📦 **Repository:**  \`${target.repo}\`\n` +
+    `• 📄 **Workflow:**    \`${target.workflow}\`\n` +
+    `• ⚠️ **Status Code:** HTTP \`${result.status}\`\n` +
+    `• 📝 **Details:**     \`${result.error || "Unknown error"}\`\n\n` +
+    `💡 *Verify that your GH_PAT secret has 'repo' or 'actions:write' permissions.*`
   );
 }
 
@@ -374,17 +364,16 @@ export function renderBuildFailureCard(target, result) {
  */
 export function renderStatusCard(env) {
   return (
-    "╭─ 📊 **SYSTEM STATUS MONITOR**\n" +
-    "├──────────────────────────────\n" +
-    "│ 🟢 **Edge Gateway:**   `Cloudflare Global Edge (Operational)`\n" +
-    "│ 🛰️ **Pipeline Mode:**  `100% Serverless On-Demand`\n" +
-    "│ ⚡ **Runner State:**   `Standing By (0 idle usage)`\n" +
-    "│ 📦 **Payload Limit:**  `Up to 2,000 MB (2.0 GB)`\n" +
-    "│ 🍎 **iOS Monitor:**    `Active (YouTube & YouTube Music)`\n" +
-    "│ 🚀 **Build Engine:**   `Active (/build)` with Stateless Bitmasks\n" +
-    `│ 🐙 **Target Repo:**    \`${env.GH_REPO || "DexterDevKH/TelegramDropboxBot"}\`\n` +
-    "│\n" +
-    "╰─ 💡 *Upload any media file or link to trigger cloud sync.*"
+    "📊 **SYSTEM STATUS MONITOR**\n" +
+    "──────────────────────────────\n" +
+    "• 🟢 **Edge Gateway:**   `Cloudflare Global Edge (Operational)`\n" +
+    "• 🛰️ **Pipeline Mode:**  `100% Serverless On-Demand`\n" +
+    "• ⚡ **Runner State:**   `Standing By (0 idle usage)`\n" +
+    "• 📦 **Payload Limit:**  `Up to 2,000 MB (2.0 GB)`\n" +
+    "• 🍎 **iOS Monitor:**    `Active (YouTube & YouTube Music)`\n" +
+    "• 🚀 **Build Engine:**   `Active (/build)` with Stateless Bitmasks\n" +
+    `• 🐙 **Target Repo:**    \`${env.GH_REPO || "DexterDevKH/TelegramDropboxBot"}\`\n\n` +
+    "💡 *Upload any media file or link to trigger cloud sync.*"
   );
 }
 
@@ -393,20 +382,18 @@ export function renderStatusCard(env) {
  */
 export function renderHelpCard() {
   return (
-    "╭─ ⚡ **TELEGRAM TO DROPBOX PIPELINE**\n" +
-    "├──────────────────────────────\n" +
-    "│ 📥 **Quick Transfer:** Forward any file or paste direct URLs (up to 2 GB).\n" +
-    "│ 🚀 **GitHub Builder:** Send `/build` to configure parameters & trigger builds.\n" +
-    "│\n" +
-    "├─ 🕹️ **Commands Manual**\n" +
-    "│ • `/build` — Configure inputs, toggle extensions & dispatch build\n" +
-    "│ • `/settweak` — Update secret TWEAK_URL env for DTKACE and DTLite\n" +
-    "│ • `/checkversion` — Check official App Store iOS releases\n" +
-    "│ • `/status` — View real-time runner status & health metrics\n" +
-    "│ • `/ping` — Measure gateway round-trip edge latency\n" +
-    "│ • `/help` — Display this operational manual\n" +
-    "│\n" +
-    "╰─ 🟢 **Status:** Armed and ready for transmission."
+    "⚡ **TELEGRAM TO DROPBOX PIPELINE**\n" +
+    "──────────────────────────────\n" +
+    "📥 **Quick Transfer:** Forward any file or paste direct URLs (up to 2 GB).\n" +
+    "🚀 **GitHub Builder:** Send `/build` to configure parameters & trigger builds.\n\n" +
+    "🕹️ **Commands Manual**\n" +
+    "• `/build` — Configure inputs, toggle extensions & dispatch build\n" +
+    "• `/settweak` — Update secret TWEAK_URL env for DTKACE and DTLite\n" +
+    "• `/checkversion` — Check official App Store iOS releases\n" +
+    "• `/status` — View real-time runner status & health metrics\n" +
+    "• `/ping` — Measure gateway round-trip edge latency\n" +
+    "• `/help` — Display this operational manual\n\n" +
+    "🟢 **Status:** Armed and ready for transmission."
   );
 }
 
@@ -415,13 +402,12 @@ export function renderHelpCard() {
  */
 export function renderPingCard() {
   return (
-    "╭─ ⚡ **GATEWAY PONG**\n" +
-    "├──────────────────────────────\n" +
-    "│ 🟢 **Status:**  `Operational (100%)`\n" +
-    "│ 🛰️ **Host:**    `Cloudflare Global Edge (~15ms)`\n" +
-    "│ ⚡ **Engine:**  `Serverless On-Demand Runner`\n" +
-    "│\n" +
-    "╰─ 💡 *Drop any media or URL to sync, or send /build to trigger builds.*"
+    "⚡ **GATEWAY PONG**\n" +
+    "──────────────────────────────\n" +
+    "• 🟢 **Status:** `Operational (100%)`\n" +
+    "• 🛰️ **Host:**   `Cloudflare Global Edge (~15ms)`\n" +
+    "• ⚡ **Engine:** `Serverless On-Demand Runner`\n\n" +
+    "💡 *Drop any media or URL to sync, or send /build to trigger builds.*"
   );
 }
 
@@ -433,13 +419,12 @@ export function renderMediaNoticeCard(fileName, fileSizeFormatted) {
   const unzipNote = isZip ? " *(Auto-unzip enabled)*" : "";
 
   return (
-    "╭─ ⚡ **TRANSFER REQUEST RECEIVED**\n" +
-    "├──────────────────────────────\n" +
-    `│ 📄 **Target:**   \`${fileName}\`${unzipNote}\n` +
-    (fileSizeFormatted ? `│ 📦 **Filesize:** \`${fileSizeFormatted}\`\n` : "") +
-    "│ 🛰️ **Status:**   `Dispatching GitHub Actions runner...`\n" +
-    "│\n" +
-    "╰─ ⏳ *High-speed cloud ingestion & Dropbox push will engage shortly.*"
+    "⚡ **TRANSFER REQUEST RECEIVED**\n" +
+    "──────────────────────────────\n" +
+    `• 📄 **Target:**   \`${fileName}\`${unzipNote}\n` +
+    (fileSizeFormatted ? `• 📦 **Filesize:** \`${fileSizeFormatted}\`\n` : "") +
+    "• 🛰️ **Status:**   `Dispatching GitHub Actions runner...`\n\n" +
+    "⏳ *High-speed cloud ingestion & Dropbox push will engage shortly.*"
   );
 }
 
@@ -448,21 +433,20 @@ export function renderMediaNoticeCard(fileName, fileSizeFormatted) {
  */
 export function renderUrlNoticeCard(rawUrl, fileName, fileSizeFormatted, isArtifact = false, artifactRepo = null) {
   const sourceLine = isArtifact && artifactRepo
-    ? `│ 🔗 **Source:**   GitHub Actions Artifact (\`${artifactRepo}\`)\n`
-    : `│ 🔗 **Source:**   Remote Web Link\n`;
+    ? `• 🔗 **Source:**   GitHub Actions Artifact (\`${artifactRepo}\`)\n`
+    : `• 🔗 **Source:**   Remote Web Link\n`;
 
   const isZip = isArtifact || fileName.toLowerCase().endsWith(".zip");
   const unzipNote = isZip ? " *(Auto-unzip enabled)*" : "";
 
   return (
-    "╭─ ⚡ **URL DOWNLOAD REQUEST RECEIVED**\n" +
-    "├──────────────────────────────\n" +
+    "⚡ **URL DOWNLOAD REQUEST RECEIVED**\n" +
+    "──────────────────────────────\n" +
     sourceLine +
-    `│ 📄 **Target:**   \`${fileName}\`${unzipNote}\n` +
-    (fileSizeFormatted ? `│ 📦 **Filesize:** \`${fileSizeFormatted}\`\n` : "") +
-    "│ 🛰️ **Status:**   `Dispatching GitHub Actions runner...`\n" +
-    "│\n" +
-    "╰─ ⏳ *Download, archive extraction & Dropbox push will engage shortly.*"
+    `• 📄 **Target:**   \`${fileName}\`${unzipNote}\n` +
+    (fileSizeFormatted ? `• 📦 **Filesize:** \`${fileSizeFormatted}\`\n` : "") +
+    "• 🛰️ **Status:**   `Dispatching GitHub Actions runner...`\n\n" +
+    "⏳ *Download, archive extraction & Dropbox push will engage shortly.*"
   );
 }
 
@@ -484,11 +468,10 @@ export function renderUrlDetectedCard(rawUrl) {
   ];
 
   const text = (
-    "╭─ 🔗 **IPA LINK DETECTED**\n" +
-    "├──────────────────────────────\n" +
-    `│ URL: \`${rawUrl}\`\n` +
-    "│\n" +
-    "╰─ 💡 *Choose which iOS app to build with this link:*"
+    "🔗 **IPA LINK DETECTED**\n" +
+    "──────────────────────────────\n" +
+    `• 🔗 **URL:** \`${rawUrl}\`\n\n` +
+    "💡 *Choose which iOS app to build with this link:*"
   );
 
   return { text, buttons };
@@ -499,15 +482,13 @@ export function renderUrlDetectedCard(rawUrl) {
  */
 export function renderSecretTweakMenuText() {
   return (
-    "╭─ 🔐 **CONFIGURE SECRET TWEAK ENV (TWEAK_URL)**\n" +
-    "├──────────────────────────────\n" +
-    "│ Select a target repository to update its GitHub Actions `TWEAK_URL` secret:\n" +
-    "│\n" +
-    "│ • 🚀 **DTKACE Plus** (`DexterDevKH/DTKACE`)\n" +
-    "│ • ✨ **DTLite Plus** (`DexterDevKH/DTLite`)\n" +
-    "│ • 🔄 **Both Repositories**\n" +
-    "│\n" +
-    "╰─ 🛡️ *Encrypted end-to-end via Libsodium SealedBox (X25519).*"
+    "🔐 **CONFIGURE SECRET TWEAK ENV (TWEAK_URL)**\n" +
+    "──────────────────────────────\n" +
+    "Select a target repository to update its GitHub Actions `TWEAK_URL` secret:\n\n" +
+    "• 🚀 **DTKACE Plus** (`DexterDevKH/DTKACE`)\n" +
+    "• ✨ **DTLite Plus** (`DexterDevKH/DTLite`)\n" +
+    "• 🔄 **Both Repositories**\n\n" +
+    "🛡️ *Encrypted end-to-end via Libsodium SealedBox (X25519).*"
   );
 }
 
@@ -531,14 +512,13 @@ export function renderSecretTweakMenuButtons() {
  */
 export function renderSecretTweakSuccessCard(repoLabel, tweakUrl) {
   return (
-    "╭─ ✅ **SECRET TWEAK ENV UPDATED!**\n" +
-    "├──────────────────────────────\n" +
-    "│ 🔐 **Secret Name:** `TWEAK_URL`\n" +
-    `│ 📦 **Repository:**  \`${repoLabel}\`\n` +
-    `│ 🔗 **Tweak URL:**   \`${tweakUrl}\`\n` +
-    "│ 🛡️ **Security:**    Libsodium SealedBox (X25519)\n" +
-    "│\n" +
-    "╰─ 💡 *Future compilation runs will automatically use this secret!*"
+    "✅ **SECRET TWEAK ENV UPDATED!**\n" +
+    "──────────────────────────────\n" +
+    "• 🔐 **Secret Name:** `TWEAK_URL`\n" +
+    `• 📦 **Repository:**  \`${repoLabel}\`\n` +
+    `• 🔗 **Tweak URL:**   \`${tweakUrl}\`\n` +
+    "• 🛡️ **Security:**    Libsodium SealedBox (X25519)\n\n" +
+    "💡 *Future compilation runs will automatically use this secret!*"
   );
 }
 
@@ -547,11 +527,10 @@ export function renderSecretTweakSuccessCard(repoLabel, tweakUrl) {
  */
 export function renderSecretTweakFailureCard(repoLabel, errorMsg) {
   return (
-    "╭─ ❌ **FAILED TO UPDATE SECRET ENV**\n" +
-    "├──────────────────────────────\n" +
-    `│ 📦 **Repository:** \`${repoLabel}\`\n` +
-    `│ ⚠️ **Details:**    \`${errorMsg}\`\n` +
-    "│\n" +
-    "╰─ 💡 *Verify that GH_PAT has 'repo' or 'secrets:write' permissions.*"
+    "❌ **FAILED TO UPDATE SECRET ENV**\n" +
+    "──────────────────────────────\n" +
+    `• 📦 **Repository:** \`${repoLabel}\`\n` +
+    `• ⚠️ **Details:**    \`${errorMsg}\`\n\n` +
+    "💡 *Verify that GH_PAT has 'repo' or 'secrets:write' permissions.*"
   );
 }

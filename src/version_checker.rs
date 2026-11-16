@@ -253,35 +253,34 @@ pub fn format_version_alert_text(app_info: &IosAppInfo, prev_version: Option<&st
     }
 
     format!(
-        "╭─ 🍎 **NEW IOS RELEASE DETECTED!**\n\
-         ├──────────────────────────────\n\
-         │ {} **Application:** {}\n\
-         │ 🆔 **Bundle ID:**   `{}`\n\
-         │ 🆕 **New Version:** `{}`\n\
-         │ ⏮️ **Previous:**    {}\n\
-         │ 📅 **Release Date:** `{}`\n\
-         │\n\
-         ├─ 📝 **Release Notes**\n\
-         │ {}\n\
-         │\n\
-         ╰─ 💡 *Official release detected. Tap below to trigger an updated build.*",
+        "🍎 **NEW IOS RELEASE DETECTED!**\n\
+         ──────────────────────────────\n\
+         • {} **Application:** {}\n\
+         • 🆔 **Bundle ID:**   `{}`\n\
+         • 🆕 **New Version:** `{}`\n\
+         • ⏮️ **Previous:**    {}\n\
+         • 📅 **Release Date:** `{}`\n\n\
+         📝 **Release Notes:**\n\
+         {}\n\
+         ──────────────────────────────\n\
+         💡 *Official release detected. Tap below to trigger an updated build.*",
         app_info.icon,
         app_info.app_name,
         app_info.bundle_id,
         app_info.version,
         prev_str,
         app_info.release_date,
-        notes.replace('\n', "\n│ ")
+        notes
     )
 }
 
 pub fn format_version_status_text(apps_data: &[IosAppInfo]) -> String {
     let mut lines = vec![
-        "╭─ 🍎 **IOS APP STORE VERSION MONITOR**".to_string(),
-        "├──────────────────────────────".to_string(),
+        "🍎 **IOS APP STORE VERSION MONITOR**".to_string(),
+        "──────────────────────────────".to_string(),
     ];
 
-    for (idx, app) in apps_data.iter().enumerate() {
+    for app in apps_data {
         let targets_str = app
             .target_keys
             .iter()
@@ -290,22 +289,18 @@ pub fn format_version_status_text(apps_data: &[IosAppInfo]) -> String {
             .join(", ");
 
         lines.push(format!(
-            "│ {} **{}**\n\
-             │  • 🆔 **Bundle ID:** `{}`\n\
-             │  • 🏷️ **Version:**   `{}`\n\
-             │  • 📅 **Released:**  `{}`\n\
-             │  • 🛠️ **Targets:**   {}",
+            "{} **{}**\n\
+             • 🆔 **Bundle ID:** `{}`\n\
+             • 🏷️ **Version:**   `{}`\n\
+             • 📅 **Released:**  `{}`\n\
+             • 🛠️ **Targets:**   {}\n",
             app.icon, app.app_name, app.bundle_id, app.version, app.release_date, targets_str
         ));
-
-        if idx + 1 < apps_data.len() {
-            lines.push("│".to_string());
-        }
     }
 
     lines.push(
-        "│\n\
-         ╰─ ⚡ *24/7 monitor active. Instant alerts dispatched upon App Store updates.*"
+        "──────────────────────────────\n\
+         ⚡ *24/7 monitor active. Instant alerts dispatched upon App Store updates.*"
             .to_string(),
     );
 

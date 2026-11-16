@@ -118,26 +118,25 @@ export async function saveStoredVersions(env, data) {
  */
 export function renderVersionStatusCard(appsData) {
   let card =
-    "╭─ 🍎 **IOS APP STORE VERSION MONITOR**\n" +
-    "├──────────────────────────────\n";
+    "🍎 **IOS APP STORE VERSION MONITOR**\n" +
+    "──────────────────────────────\n";
 
   for (let i = 0; i < appsData.length; i++) {
     const app = appsData[i];
     const targetsStr = (app.targetKeys || []).map((k) => `\`${k.toUpperCase()}\``).join(", ");
     card +=
-      `│ ${app.icon || "📱"} **${app.trackName || app.appName}**\n` +
-      `│  • 🆔 **Bundle ID:** \`${app.bundleId}\`\n` +
-      `│  • 🏷️ **Version:**   \`${app.version}\`\n` +
-      `│  • 📅 **Released:**  \`${app.releaseDate || "Recent"}\`\n` +
-      `│  • 🛠️ **Targets:**   ${targetsStr}\n`;
+      `${app.icon || "📱"} **${app.trackName || app.appName}**\n` +
+      `• 🆔 **Bundle ID:** \`${app.bundleId}\`\n` +
+      `• 🏷️ **Version:**   \`${app.version}\`\n` +
+      `• 📅 **Released:**  \`${app.releaseDate || "Recent"}\`\n` +
+      `• 🛠️ **Targets:**   ${targetsStr}\n`;
     if (i + 1 < appsData.length) {
-      card += "│\n";
+      card += "\n";
     }
   }
 
   card +=
-    "│\n" +
-    "╰─ ⚡ *24/7 monitor active. Instant alerts dispatched upon App Store updates.*";
+    "\n⚡ *24/7 monitor active. Instant alerts dispatched upon App Store updates.*";
 
   const buttons = [
     [
@@ -164,18 +163,16 @@ export function renderVersionAlertCard(appInfo, prevVersion) {
   }
 
   const card =
-    "╭─ 🍎 **NEW IOS RELEASE DETECTED!**\n" +
-    "├──────────────────────────────\n" +
-    `│ ${appInfo.icon || "📱"} **Application:** ${appInfo.trackName || appInfo.appName || "iOS App"}\n` +
-    `│ 🆔 **Bundle ID:**   \`${appInfo.bundleId}\`\n` +
-    `│ 🆕 **New Version:** \`${appInfo.version}\`\n` +
-    `│ ⏮️ **Previous:**    ${prevStr}\n` +
-    `│ 📅 **Release Date:** \`${appInfo.releaseDate || "Recent"}\`\n` +
-    "│\n" +
-    "├─ 📝 **Release Notes**\n" +
-    `│ ${notes.replace(/\n/g, "\n│ ")}\n` +
-    "│\n" +
-    "╰─ 💡 *Official release detected. Tap below to trigger an updated build.*";
+    "🍎 **NEW IOS RELEASE DETECTED!**\n" +
+    "──────────────────────────────\n" +
+    `• ${appInfo.icon || "📱"} **Application:** ${appInfo.trackName || appInfo.appName || "iOS App"}\n` +
+    `• 🆔 **Bundle ID:**   \`${appInfo.bundleId}\`\n` +
+    `• 🆕 **New Version:** \`${appInfo.version}\`\n` +
+    `• ⏮️ **Previous:**    ${prevStr}\n` +
+    `• 📅 **Release Date:** \`${appInfo.releaseDate || "Recent"}\`\n\n` +
+    "📝 **Release Notes**\n" +
+    `${notes}\n\n` +
+    "💡 *Official release detected. Tap below to trigger an updated build.*";
 
   const storeUrl = appInfo.trackViewUrl || "https://apps.apple.com";
   let buttons;
