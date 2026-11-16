@@ -9,6 +9,9 @@ on:
     types:
       - completed
   workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/cleanup.yml'
 
 concurrency:
   group: auto-purge-runs
@@ -39,12 +42,22 @@ jobs:
             WORKFLOW_PATHS="bot.yml cleanup.yml prebuild.yml version_check.yml"
           fi
 
+          echo "Workflows to evaluate:"
+          echo "$WORKFLOW_PATHS"
+          echo ""
+
           for p in $WORKFLOW_PATHS; do
             wf=$(basename "$p")
             echo "--- Processing workflow: $wf ---"
 
-            # List completed runs ordered newest to oldest. If length > 1, extract database IDs starting from index 1 (skipping index 0 to keep the latest run).
-            RUNS_TO_DELETE=$(gh run list --repo "${{ github.repository }}" --workflow="$wf" --status=completed --limit 200 --json databaseId -q 'if length > 1 then .[1:][].databaseId else empty end' 2>/dev/null || true)
+            if [ "$wf" = "cleanup.yml" ] || [ "$wf" = "cleanup.yaml" ]; then
+              # For cleanup.yml itself, the currently executing run ($GITHUB_RUN_ID) will become
+              # the 1 retained completed run upon completion. Therefore, all prior completed runs must be deleted.
+              RUNS_TO_DELETE=$(gh run list --repo "${{ github.repository }}" --workflow="$wf" --status=completed --limit 200 --json databaseId -q '.[].databaseId' 2>/dev/null || true)
+            else
+              # For all other workflows, keep index 0 (the most recent completed run) and delete indices 1..N.
+              RUNS_TO_DELETE=$(gh run list --repo "${{ github.repository }}" --workflow="$wf" --status=completed --limit 200 --json databaseId -q 'if length > 1 then .[1:][].databaseId else empty end' 2>/dev/null || true)
+            fi
 
             if [ -z "$RUNS_TO_DELETE" ]; then
               echo "✔ Keeping latest run (1 or 0 completed runs present)."
@@ -53,14 +66,18 @@ jobs:
               echo "Found $COUNT older completed run(s) to purge. Keeping the single most recent run."
               for rid in $RUNS_TO_DELETE; do
                 if [ -n "$rid" ] && [ "$rid" != "${{ github.run_id }}" ]; then
-                  echo "Deleting old run $rid..."
-                  gh api -X DELETE "repos/${{ github.repository }}/actions/runs/$rid" >/dev/null 2>&1 || true
+                  echo "  Deleting old run: $rid"
+                  if gh api -X DELETE "repos/${{ github.repository }}/actions/runs/$rid" >/dev/null 2>&1; then
+                    echo "  ✔ Successfully purged run $rid"
+                  else
+                    echo "  ⚠ Failed to purge run $rid"
+                  fi
                 fi
               done
-              echo "✔ Successfully purged $COUNT older run(s) for $wf."
+              echo "✔ Finished purging older runs for $wf."
             fi
           done
 
           echo ""
-          echo "✔ Completed: Exactly one most recent run retained for each workflow."
+          echo "✔ Complete: Exactly one most recent run retained for each workflow."
           echo "::endgroup::"
