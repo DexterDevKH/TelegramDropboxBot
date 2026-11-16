@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 use tracing::{error, info, warn};
 
 use crate::config::AppConfig;
-use crate::formatters::{extract_ipa_bundle_id, match_app_bundle, normalize_url};
+use crate::formatters::{extract_ipa_bundle_id, match_rotation_family, normalize_url};
 use crate::privacy::{mask_filename, register_github_mask};
 
 #[derive(Debug, Clone, Deserialize)]
@@ -334,13 +334,13 @@ impl DropboxService {
     }
 
     /// Enforces file retention on target Dropbox directory:
-    /// 1. If incoming_bundle is specified: replaces any file of the same app.
+    /// 1. If incoming_target is specified: replaces any file of the same app or tweak family.
     /// 2. Enforces general FIFO retention cap.
     pub async fn enforce_folder_retention(
         &self,
         folder_path: &str,
         max_files: usize,
-        incoming_bundle: Option<&str>,
+        incoming_target: Option<&str>,
         exclude_path: Option<&str>,
     ) -> Vec<String> {
         let mut deleted_files = Vec::new();
@@ -356,8 +356,13 @@ impl DropboxService {
             }
         };
 
-        let normalized_incoming = incoming_bundle.and_then(match_app_bundle);
+        let normalized_target = incoming_target.and_then(match_rotation_family);
         let normalized_exclude = exclude_path.unwrap_or("").to_lowercase().trim().to_string();
+        let exclude_name = Path::new(&normalized_exclude)
+            .file_name()
+            .and_then(|f| f.to_str())
+            .unwrap_or("")
+            .to_lowercase();
 
         let mut remaining_files: Vec<DropboxFileEntry> = Vec::new();
 
@@ -367,13 +372,22 @@ impl DropboxService {
                 .as_deref()
                 .unwrap_or(&item.name)
                 .to_lowercase();
-            if !normalized_exclude.is_empty() && item_path == normalized_exclude {
+            let is_excluded = if normalized_exclude.is_empty() {
+                false
+            } else {
+                item_path == normalized_exclude
+                    || item.name.to_lowercase() == exclude_name
+                    || item_path.trim_start_matches('/')
+                        == normalized_exclude.trim_start_matches('/')
+            };
+
+            if is_excluded {
                 remaining_files.push(item);
                 continue;
             }
 
-            if let Some(target_bundle) = normalized_incoming {
-                if match_app_bundle(&item.name) == Some(target_bundle) {
+            if let Some(target_family) = normalized_target {
+                if match_rotation_family(&item.name) == Some(target_family) {
                     let target_del_path = item.path_lower.as_deref().unwrap_or(&item.name);
                     match self.delete_file(target_del_path).await {
                         Ok(_) => {
@@ -386,7 +400,7 @@ impl DropboxService {
                             };
                             info!(
                                 "Auto-Rotation: Replaced existing {} file '{}' in {}",
-                                target_bundle, log_file, log_folder
+                                target_family, log_file, log_folder
                             );
                         }
                         Err(err) => {
@@ -659,32 +673,32 @@ impl DropboxService {
         };
         info!("Successfully committed file to Dropbox: {}", log_dest);
 
-        // Enforce FIFO Retention & Same-App Auto-Rotation
+        // Enforce FIFO Retention & Family-Aware Auto-Rotation
         let mut pruned_files = Vec::new();
         if !target_folder.trim().trim_matches('/').is_empty() {
             let cap = self.config.get_max_files_for_folder(target_folder);
 
-            let mut incoming_bundle = None;
+            let mut incoming_target = None;
             if local_path
                 .to_string_lossy()
                 .to_lowercase()
                 .ends_with(".ipa")
             {
-                incoming_bundle = extract_ipa_bundle_id(local_path);
+                incoming_target = extract_ipa_bundle_id(local_path);
             }
-            if incoming_bundle.is_none() {
+            if incoming_target.is_none() {
                 let fname = Path::new(dest_path)
                     .file_name()
                     .and_then(|f| f.to_str())
                     .unwrap_or("");
-                incoming_bundle = match_app_bundle(fname).map(|s| s.to_string());
+                incoming_target = match_rotation_family(fname).map(|s| s.to_string());
             }
 
             pruned_files = self
                 .enforce_folder_retention(
                     target_folder,
                     cap,
-                    incoming_bundle.as_deref(),
+                    incoming_target.as_deref(),
                     Some(dest_path),
                 )
                 .await;

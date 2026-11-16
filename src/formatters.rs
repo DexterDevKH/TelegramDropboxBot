@@ -499,7 +499,14 @@ pub fn match_app_bundle(identifier_or_name: &str) -> Option<&'static str> {
     if identifier_or_name.is_empty() {
         return None;
     }
-    let clean = identifier_or_name.trim().to_lowercase();
+    let basename = Path::new(identifier_or_name)
+        .file_name()
+        .and_then(|f| f.to_str())
+        .unwrap_or(identifier_or_name);
+    let clean = basename.trim().to_lowercase();
+    if clean.ends_with(".deb") {
+        return None;
+    }
 
     // Priority 1: Exact / substring check for YouTube Music
     if clean.contains("com.google.ios.youtubemusic")
@@ -522,4 +529,70 @@ pub fn match_app_bundle(identifier_or_name: &str) -> Option<&'static str> {
     }
 
     None
+}
+
+/// Identifies whether a DEB package filename belongs to a known tweak family (ytkace, ytlite, ytmusic).
+pub fn match_deb_family(filename: &str) -> Option<&'static str> {
+    if filename.is_empty() {
+        return None;
+    }
+    let basename = Path::new(filename)
+        .file_name()
+        .and_then(|f| f.to_str())
+        .unwrap_or(filename);
+    let clean = basename.trim().to_lowercase();
+    if !clean.ends_with(".deb") {
+        return None;
+    }
+
+    // YTKACE / DTKACE / KACE family
+    if clean.contains("ytkace")
+        || clean.contains("dtkace")
+        || clean.contains("kacelite")
+        || clean.contains("kace")
+    {
+        return Some("ytkace");
+    }
+
+    // YTLite / DTLite family
+    if clean.contains("ytlite") || clean.contains("dtlite") {
+        return Some("ytlite");
+    }
+
+    // YTMusic / DTMusic family
+    if clean.contains("ytmusic") || clean.contains("dtmusic") || clean.contains("musicultimate") {
+        return Some("ytmusic");
+    }
+
+    None
+}
+
+/// Resolves the auto-rotation target family (DEB tweak family key or IPA bundle identifier).
+pub fn match_rotation_family(identifier_or_name: &str) -> Option<&'static str> {
+    if identifier_or_name.is_empty() {
+        return None;
+    }
+    let basename = Path::new(identifier_or_name)
+        .file_name()
+        .and_then(|f| f.to_str())
+        .unwrap_or(identifier_or_name);
+    let clean = basename.trim().to_lowercase();
+
+    // 1. Direct family key identifiers
+    match clean.as_str() {
+        "ytkace" => return Some("ytkace"),
+        "ytlite" => return Some("ytlite"),
+        "ytmusic" => return Some("ytmusic"),
+        "com.google.ios.youtube" => return Some("com.google.ios.youtube"),
+        "com.google.ios.youtubemusic" => return Some("com.google.ios.youtubemusic"),
+        _ => {}
+    }
+
+    // 2. DEB tweak package matching
+    if clean.ends_with(".deb") {
+        return match_deb_family(&clean);
+    }
+
+    // 3. IPA bundle ID or IPA filename matching
+    match_app_bundle(&clean)
 }

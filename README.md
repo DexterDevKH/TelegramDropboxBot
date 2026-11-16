@@ -27,9 +27,10 @@ Powered by a high-performance native **Rust core engine** (built with Cargo, Tok
   - Target repositories: **DTKACE Plus**, **DTLite Plus**, and **DTMusicUltimate**.
   - **Stateless Bitmask Engine**: Toggles 13 modular tweak extensions instantly without brittle regex parsing or server session limits.
   - Single-use force reply prompts with clean chat auto-cleanup (prompts and input messages are automatically deleted upon receipt).
-- **♻️ Automated FIFO & Bundle-Aware Auto-Rotation**:
-  - Automatically prunes the oldest files when folder capacity exceeds the configured cap (`MAX_FILES_IN_FOLDER`) across both `/IPA` and `/DEB` vaults.
-  - **Smart Same-App Replacement**: When uploading a YouTube IPA (`com.google.ios.youtube`), it automatically rotates out and replaces the existing YouTube IPA in Dropbox. When uploading a YouTube Music IPA (`com.google.ios.youtubemusic`), it automatically replaces the existing YouTube Music IPA, preventing version collisions.
+- **♻️ Automated FIFO & Family-Aware Auto-Rotation**:
+  - Automatically prunes the oldest files when folder capacity exceeds the configured cap (`MAX_FILES_IN_FOLDER` / `MAX_FILES_IN_DEB_FOLDER`) across both `/IPA` and `/DEB` vaults.
+  - **Smart Same-App Replacement (`/IPA`)**: When uploading a YouTube IPA (`com.google.ios.youtube`), it automatically rotates out and replaces the existing YouTube IPA in Dropbox. When uploading a YouTube Music IPA (`com.google.ios.youtubemusic`), it automatically replaces the existing YouTube Music IPA, preventing version collisions.
+  - **Smart DEB Tweak Rotation (`/DEB`)**: When uploading a `ytkace` (or `dtkace`) `.deb`, it automatically locates and replaces existing `ytkace` tweak packages in Dropbox. When uploading a `ytlite` (or `dtlite`) `.deb`, it automatically replaces existing `ytlite` tweak packages. Packages from different families never replace each other, and unclassified packages follow standard FIFO retention.
 - **🍎 24/7 iOS Version Monitor & Instant Alert Daemon**:
   - Continuously queries official Apple App Store APIs for new iOS releases of **YouTube** (`com.google.ios.youtube`) and **YouTube Music** (`com.google.ios.youtubemusic`).
   - Automatically delivers rich alert cards to authorized Telegram users with changelog release notes and 1-tap `/build` compile buttons as soon as a new version is released.

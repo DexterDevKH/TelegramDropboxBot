@@ -13,7 +13,7 @@ use crate::config::AppConfig;
 use crate::constants::{get_extensions, get_target, TARGET_DTKACE};
 use crate::dropbox::DropboxService;
 use crate::formatters::{
-    decode_bitmask, extract_single_file_from_zip, format_eta, format_size, match_app_bundle,
+    decode_bitmask, extract_single_file_from_zip, format_eta, format_size, match_rotation_family,
     parse_artifact_url, parse_run_url, render_progress_bar, resolve_dropbox_destination,
     sanitize_filename, SpeedTracker,
 };
@@ -575,13 +575,13 @@ impl SyncApp {
                 .collect::<Vec<_>>()
                 .join(", ");
 
-            let detected_bundle = match_app_bundle(&final_filename);
-            if let Some(bundle) = detected_bundle {
+            let detected_family = match_rotation_family(&final_filename);
+            if let Some(family) = detected_family {
                 completion_card.push_str(&format!(
                     "\n♻️ **Auto-Rotation (`{}`)**\n\
                      • Replaced matching `{}`:\n\
                        {}\n",
-                    vault_display, bundle, pruned_str
+                    vault_display, family, pruned_str
                 ));
             } else {
                 let cap = self.config.get_max_files_for_folder(&retention_folder);
