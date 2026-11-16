@@ -172,6 +172,7 @@ jobs:
           ARTIFACT_REPO: ${{ github.event.client_payload.artifact_repo }}
           FILE_NAME: ${{ github.event.client_payload.file_name }}
           FILE_SIZE: ${{ github.event.client_payload.file_size }}
+          TELEGRAM_FILE_ID: ${{ github.event.client_payload.telegram_file_id }}
           IDLE_KEEP_ALIVE_SECONDS: "0"
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_API_ID: ${{ secrets.TELEGRAM_API_ID }}

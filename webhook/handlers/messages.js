@@ -487,25 +487,33 @@ export async function handleIncomingMessage(message, env, ctx) {
   if (hasMedia) {
     let fileName = "Attachment";
     let fileSize = 0;
+    let fileId = null;
 
     if (message.document) {
       fileName = message.document.file_name || `document_${messageId}.bin`;
       fileSize = message.document.file_size || 0;
+      fileId = message.document.file_id;
     } else if (message.video) {
       fileName = message.video.file_name || `video_${messageId}.mp4`;
       fileSize = message.video.file_size || 0;
+      fileId = message.video.file_id;
     } else if (message.audio) {
       fileName = message.audio.file_name || `${message.audio.title || "audio"}_${messageId}.mp3`;
       fileSize = message.audio.file_size || 0;
+      fileId = message.audio.file_id;
     } else if (message.photo && Array.isArray(message.photo) && message.photo.length > 0) {
+      const bestPhoto = message.photo[message.photo.length - 1];
       fileName = `photo_${messageId}.jpg`;
-      fileSize = message.photo[message.photo.length - 1].file_size || 0;
+      fileSize = bestPhoto.file_size || 0;
+      fileId = bestPhoto.file_id;
     } else if (message.voice) {
       fileName = `voice_${messageId}.ogg`;
       fileSize = message.voice.file_size || 0;
+      fileId = message.voice.file_id;
     } else if (message.video_note) {
       fileName = `videonote_${messageId}.mp4`;
       fileSize = message.video_note.file_size || 0;
+      fileId = message.video_note.file_id;
     }
 
     const formattedSize = formatBytes(fileSize);
@@ -522,6 +530,7 @@ export async function handleIncomingMessage(message, env, ctx) {
       dispatch_message_id: dispatchMessageId,
       file_name: fileName,
       file_size: fileSize || 0,
+      telegram_file_id: fileId,
     };
 
     const repo = env.GH_REPO || "DexterDevKH/TelegramDropboxBot";

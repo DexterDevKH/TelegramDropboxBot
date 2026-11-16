@@ -47,6 +47,7 @@ pub struct AppConfig {
     pub artifact_repo: Option<String>,
     pub file_name: Option<String>,
     pub file_size: u64,
+    pub telegram_file_id: Option<String>,
 }
 
 impl AppConfig {
@@ -228,6 +229,11 @@ pub fn load_config() -> Result<AppConfig, String> {
         .parse::<u64>()
         .unwrap_or(0);
 
+    let telegram_file_id = env::var("TELEGRAM_FILE_ID")
+        .ok()
+        .map(|v| v.trim().to_string())
+        .filter(|s| !s.is_empty());
+
     let chunk_size_mb = env::var("CHUNK_SIZE_MB")
         .unwrap_or_else(|_| "8".to_string())
         .trim()
@@ -293,5 +299,6 @@ pub fn load_config() -> Result<AppConfig, String> {
         artifact_repo,
         file_name,
         file_size,
+        telegram_file_id,
     })
 }

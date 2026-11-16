@@ -220,8 +220,20 @@ impl SyncApp {
                 ..Default::default()
             })
             .await?;
+        } else if let Some(ref file_id) = self.config.telegram_file_id {
+            self.process_url_payload(ProcessPayloadRequest {
+                raw_url: "",
+                chat_id,
+                message_id,
+                dispatch_msg_id,
+                telegram_file_id: Some(file_id),
+                file_name_override: self.config.file_name.as_deref(),
+                file_size_override: self.config.file_size,
+                ..Default::default()
+            })
+            .await?;
         } else {
-            warn!("On-demand invoked without direct URL payload. Awaiting URL or file.");
+            warn!("On-demand invoked without direct URL or Telegram file payload. Awaiting URL or file.");
         }
 
         Ok(())
