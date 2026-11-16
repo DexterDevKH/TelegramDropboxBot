@@ -1,0 +1,49 @@
+name: Pre-Build Native Core Engine
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'Cargo.lock'
+      - 'Cargo.toml'
+      - 'src/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: write
+
+jobs:
+  prebuild:
+    name: Build & Cache Native Engine Binary
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+
+      - name: Check Existing Binary Cache
+        id: binary-cache
+        uses: actions/cache@v4
+        with:
+          path: target/release/telegram_dropbox_bot
+          key: engine-bin-${{ runner.os }}-${{ hashFiles('Cargo.lock', 'Cargo.toml', 'src/**') }}
+
+      - name: Setup Rust Toolchain
+        if: steps.binary-cache.outputs.cache-hit != 'true'
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust Cache Action
+        if: steps.binary-cache.outputs.cache-hit != 'true'
+        uses: Swatinem/rust-cache@v2
+
+      - name: Compile Native Core Engine
+        if: steps.binary-cache.outputs.cache-hit != 'true'
+        run: |
+          echo "::group::📦 Compiling High-Performance Native Core Engine"
+          cargo build --release
+          echo "::endgroup::"
+
+      - name: Verify Binary
+        run: |
+          chmod +x target/release/telegram_dropbox_bot
+          ./target/release/telegram_dropbox_bot --help

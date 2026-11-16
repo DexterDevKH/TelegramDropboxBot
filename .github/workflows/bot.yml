@@ -45,17 +45,30 @@ jobs:
       - name: Checkout Source Code
         uses: actions/checkout@v4
 
+      - name: Restore Pre-Built Engine Binary
+        id: binary-cache
+        uses: actions/cache@v4
+        with:
+          path: target/release/telegram_dropbox_bot
+          key: engine-bin-${{ runner.os }}-${{ hashFiles('Cargo.lock', 'Cargo.toml', 'src/**') }}
+
       - name: Setup Rust Toolchain
+        if: steps.binary-cache.outputs.cache-hit != 'true'
         uses: dtolnay/rust-toolchain@stable
 
       - name: Rust Cache Action
+        if: steps.binary-cache.outputs.cache-hit != 'true'
         uses: Swatinem/rust-cache@v2
 
       - name: Compile Native Core Engine
+        if: steps.binary-cache.outputs.cache-hit != 'true'
         run: |
           echo "::group::📦 Compiling High-Performance Native Core Engine"
           cargo build --release
           echo "::endgroup::"
+
+      - name: Ensure Engine Binary Executable
+        run: chmod +x target/release/telegram_dropbox_bot
 
       - name: Pre-Flight Secrets & Privacy Shield Audit
         shell: bash

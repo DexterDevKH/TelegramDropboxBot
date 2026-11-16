@@ -302,7 +302,18 @@ export async function handleIncomingMessage(message, env, ctx) {
       const repo = env.GH_REPO || "DexterDevKH/TelegramDropboxBot";
       const dispatchResult = await dispatchSyncPipeline(env.GH_PAT, repo, payload);
 
-      if (!dispatchResult.success) {
+      if (dispatchResult.success) {
+        if (dispatchMessageId) {
+          const queuedCard =
+            "⚡ **TRANSFER REQUEST QUEUED**\n" +
+            "──────────────────────────────\n" +
+            `• 📄 **Target:**   \`${fileName}\`\n` +
+            (formattedSize ? `• 📦 **Filesize:** \`${formattedSize}\`\n` : "") +
+            "• 🛰️ **Status:**   `Runner Engaged (Active Ingestion)`\n\n" +
+            "⏳ *Engine starting up... Transfer will stream shortly.*";
+          await editMessageText(env.TELEGRAM_BOT_TOKEN, chatId, dispatchMessageId, queuedCard);
+        }
+      } else {
         console.error(`[GitHub Actions URL Dispatch Error ${dispatchResult.status}]:`, dispatchResult.error);
         if (dispatchMessageId) {
           let errDetail = "";
@@ -536,7 +547,18 @@ export async function handleIncomingMessage(message, env, ctx) {
     const repo = env.GH_REPO || "DexterDevKH/TelegramDropboxBot";
     const dispatchResult = await dispatchSyncPipeline(env.GH_PAT, repo, payload);
 
-    if (!dispatchResult.success) {
+    if (dispatchResult.success) {
+      if (dispatchMessageId) {
+        const queuedCard =
+          "⚡ **TRANSFER REQUEST QUEUED**\n" +
+          "──────────────────────────────\n" +
+          `• 📄 **Target:**   \`${fileName}\`\n` +
+          (formattedSize ? `• 📦 **Filesize:** \`${formattedSize}\`\n` : "") +
+          "• 🛰️ **Status:**   `Runner Engaged (Active Ingestion)`\n\n" +
+          "⏳ *Engine starting up... Transfer will stream shortly.*";
+        await editMessageText(env.TELEGRAM_BOT_TOKEN, chatId, dispatchMessageId, queuedCard);
+      }
+    } else {
       console.error(`[GitHub Actions Dispatch Error ${dispatchResult.status}]:`, dispatchResult.error);
       if (dispatchMessageId) {
         let errDetail = "";
