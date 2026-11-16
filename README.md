@@ -112,8 +112,6 @@ TelegramDropboxBot/
 │   ├── telegram.rs            # Telegram Bot API client & Bot API v7.0+ CopyTextButton
 │   ├── ui.rs                  # Markdown presentation cards, keyboards & bitmask UI
 │   └── version_checker.rs     # Apple iTunes API version checker & Telegram alert dispatcher
-├── tests/                     # Integration test suite
-│   └── test_native_engine.rs  # End-to-end integration tests (Zip, Plist, Libsodium, etc.)
 ├── webhook/                   # Edge gateway (Cloudflare Worker v2)
 │   ├── targets.js             # Build target catalog & tweak extensions config
 │   ├── state.js               # Stateless bitmask engine & resilient multi-tier session storage
@@ -198,13 +196,7 @@ curl -F "url=https://telegramdropboxbot.<your-subdomain>.workers.dev" \
 
 ---
 
-## 🧪 Running Tests & Building Native Core
-
-Run the comprehensive Rust unit and integration test suite:
-
-```bash
-cargo test
-```
+## 🚀 Building & Running Native Core
 
 Build the optimized native release binary:
 

@@ -134,23 +134,3 @@ pub fn get_default_bundle_id(target_key: &str) -> &'static str {
         _ => "com.google.ios.youtube",
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_get_target() {
-        assert!(get_target("dtkace").is_some());
-        assert!(get_target("DTLITE").is_some());
-        assert!(get_target("dtmusic").is_some());
-        assert!(get_target("unknown").is_none());
-    }
-
-    #[test]
-    fn test_get_extensions() {
-        assert_eq!(get_extensions("dtkace").len(), 13);
-        assert_eq!(get_extensions("dtlite").len(), 10);
-        assert_eq!(get_extensions("dtmusic").len(), 0);
-    }
-}

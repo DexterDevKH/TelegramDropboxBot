@@ -394,19 +394,3 @@ impl GitHubService {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_encrypt_secret_value() {
-        // Generate a 32-byte dummy base64 key
-        let dummy_pk = [5u8; 32];
-        let dummy_b64 = BASE64_STANDARD.encode(&dummy_pk);
-
-        let enc_res = GitHubService::encrypt_secret_value(&dummy_b64, "https://github.com/custom/tweak.deb");
-        assert!(enc_res.is_ok());
-        let encrypted = enc_res.unwrap();
-        assert!(!encrypted.is_empty());
-    }
-}

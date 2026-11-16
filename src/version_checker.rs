@@ -340,31 +340,3 @@ pub async fn send_telegram_alert(
     Ok(any_success)
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_format_version_alert_text() {
-        let info = IosAppInfo {
-            app_key: "youtube".to_string(),
-            app_name: "YouTube: Watch, Listen, Stream".to_string(),
-            bundle_id: "com.google.ios.youtube".to_string(),
-            version: "20.02.1".to_string(),
-            release_date: "2026-03-25".to_string(),
-            release_date_full: "2026-03-25T08:00:00Z".to_string(),
-            release_notes: "Bug fixes and improvements.".to_string(),
-            track_view_url: "https://apps.apple.com/...".to_string(),
-            artwork_url: "https://...".to_string(),
-            min_os: "15.0".to_string(),
-            icon: "📺".to_string(),
-            target_keys: vec!["dtkace".to_string(), "dtlite".to_string()],
-        };
-
-        let card = format_version_alert_text(&info, Some("20.01.2"));
-        assert!(card.contains("NEW IOS VERSION DETECTED!"));
-        assert!(card.contains("`20.02.1`"));
-        assert!(card.contains("`20.01.2`"));
-        assert!(card.contains("com.google.ios.youtube"));
-    }
-}

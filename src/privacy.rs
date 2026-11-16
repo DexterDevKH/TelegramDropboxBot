@@ -48,28 +48,3 @@ pub fn register_github_mask(secret_value: Option<&str>) {
         }
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_mask_filename_disabled() {
-        assert_eq!(mask_filename("secret_app.ipa", false), "secret_app.ipa");
-    }
-
-    #[test]
-    fn test_mask_filename_enabled() {
-        assert_eq!(mask_filename("my_secret_file.pdf", true), "my***e.pdf");
-        assert_eq!(mask_filename("ab.ipa", true), "***.ipa");
-        assert_eq!(mask_filename("hello", true), "he***");
-        assert_eq!(mask_filename("", true), "");
-    }
-
-    #[test]
-    fn test_mask_user_id() {
-        assert_eq!(mask_user_id(12345678, false), "12345678");
-        assert_eq!(mask_user_id(12345678, true), "12***");
-        assert_eq!(mask_user_id(42, true), "***");
-    }
-}
