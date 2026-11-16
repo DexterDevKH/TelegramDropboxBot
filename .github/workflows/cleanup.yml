@@ -2,51 +2,65 @@ name: Auto-Purge Completed Workflow Runs
 
 on:
   workflow_run:
-    workflows: ["Telegram to Dropbox Sync Pipeline"]
-    types: [completed]
+    workflows:
+      - "Telegram to Dropbox Sync Pipeline"
+      - "Pre-Build Native Core Engine"
+      - "iOS App Store Version Check & Alert Daemon"
+    types:
+      - completed
   workflow_dispatch:
+
+concurrency:
+  group: auto-purge-runs
+  cancel-in-progress: true
 
 permissions:
   actions: write
+  contents: read
 
 jobs:
   purge-runs:
-    name: Auto-Purge Run Logs & History
+    name: Auto-Purge Run Logs & History (Keep 1)
     runs-on: ubuntu-latest
     steps:
-      - name: Purge Completed Workflow Runs
+      - name: Purge Completed Workflow Runs (Retain 1 Per Workflow)
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
           GH_NO_PROMPT: "1"
-          TARGET_RUN_ID: ${{ github.event.workflow_run.id }}
         run: |
-          echo "::group::🧹 Auto-Purging Completed Sync Pipeline Run"
-          # If triggered by workflow_run, target the completed run ID directly
-          if [ -n "$TARGET_RUN_ID" ]; then
-            echo "Deleting completed pipeline run: $TARGET_RUN_ID"
-            gh api -X DELETE "repos/${{ github.repository }}/actions/runs/$TARGET_RUN_ID" || true
+          echo "::group::🧹 Auto-Purge: Retain 1 Most Recent Run Per Workflow"
+
+          # Discover all workflows or fallback to known list
+          WORKFLOW_PATHS=$(gh workflow list --repo "${{ github.repository }}" --json path -q '.[].path' 2>/dev/null || true)
+          if [ -z "$WORKFLOW_PATHS" ]; then
+            echo "Falling back to predefined workflow list..."
+            WORKFLOW_PATHS="bot.yml cleanup.yml prebuild.yml version_check.yml"
           fi
 
-          # Purge any remaining completed runs of bot.yml
-          echo "Purging all completed runs of bot.yml..."
-          gh run list --repo "${{ github.repository }}" --workflow=bot.yml --status=completed --json databaseId -q '.[].databaseId' | while read -r rid; do
-            if [ -n "$rid" ]; then
-              echo "Deleting completed bot.yml run $rid"
-              gh api -X DELETE "repos/${{ github.repository }}/actions/runs/$rid" || true
+          for p in $WORKFLOW_PATHS; do
+            wf=$(basename "$p")
+            echo "--- Processing workflow: $wf ---"
+
+            # List completed runs ordered newest to oldest. If length > 1, extract database IDs starting from index 1 (skipping index 0 to keep the latest run).
+            RUNS_TO_DELETE=$(gh run list --repo "${{ github.repository }}" --workflow="$wf" --status=completed --limit 200 --json databaseId -q 'if length > 1 then .[1:][].databaseId else empty end' 2>/dev/null || true)
+
+            if [ -z "$RUNS_TO_DELETE" ]; then
+              echo "✔ Keeping latest run (1 or 0 completed runs present)."
+            else
+              COUNT=$(echo "$RUNS_TO_DELETE" | wc -w)
+              echo "Found $COUNT older completed run(s) to purge. Keeping the single most recent run."
+              for rid in $RUNS_TO_DELETE; do
+                if [ -n "$rid" ] && [ "$rid" != "${{ github.run_id }}" ]; then
+                  echo "Deleting old run $rid..."
+                  gh api -X DELETE "repos/${{ github.repository }}/actions/runs/$rid" >/dev/null 2>&1 || true
+                fi
+              done
+              echo "✔ Successfully purged $COUNT older run(s) for $wf."
             fi
           done
 
-          # Purge past completed runs of this cleanup workflow itself
-          echo "Purging past completed runs of cleanup.yml..."
-          CURRENT_RUN="${{ github.run_id }}"
-          gh run list --repo "${{ github.repository }}" --workflow=cleanup.yml --status=completed --json databaseId -q '.[].databaseId' | while read -r crid; do
-            if [ -n "$crid" ] && [ "$crid" != "$CURRENT_RUN" ]; then
-              echo "Deleting old cleanup run $crid"
-              gh api -X DELETE "repos/${{ github.repository }}/actions/runs/$crid" || true
-            fi
-          done
-
-          echo "✔ Complete: All completed run logs and history have been purged."
+          echo ""
+          echo "✔ Completed: Exactly one most recent run retained for each workflow."
           echo "::endgroup::"
