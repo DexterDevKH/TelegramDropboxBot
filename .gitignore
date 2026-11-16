@@ -51,9 +51,6 @@ temp/
 target/
 *.rs.bk
 
-# Legacy Python source backup
-python_src/
-
 # OS specific
 .DS_Store
 Thumbs.db
