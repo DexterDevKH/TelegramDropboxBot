@@ -36,6 +36,7 @@ import {
   renderBuildFailureCard,
 } from "../ui.js";
 import { trackInitialWindow } from "./scheduler.js";
+import { checkIosAppVersions, renderVersionStatusCard } from "./version_checker.js";
 
 export async function handleCallbackQuery(callbackQuery, env, ctx) {
   const queryId = callbackQuery.id;
@@ -58,6 +59,62 @@ export async function handleCallbackQuery(callbackQuery, env, ctx) {
       "🚫 **BUILD REQUEST CANCELLED**\n──────────────────────────────\nNo workflow dispatch was initiated."
     );
     await clearSession(env, cbChatId);
+    return new Response("OK", { status: 200 });
+  }
+
+  // Action: Refresh iOS Versions
+  if (cbData === "check_versions") {
+    await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, queryId, "Refreshing iOS App Store versions...");
+    const { apps } = await checkIosAppVersions(env, true);
+    const statusCard = renderVersionStatusCard(apps);
+    await editMessageText(env.TELEGRAM_BOT_TOKEN, cbChatId, cbMessageId, statusCard.text, {
+      reply_markup: { inline_keyboard: statusCard.buttons },
+    });
+    return new Response("OK", { status: 200 });
+  }
+
+  // Action: Prompt for Secret Tweak (TWEAK_URL)
+  if (cbData.startsWith("ask_sec:") || cbData.startsWith("settweak_sel:")) {
+    const parts = cbData.split(":");
+    const targetKey = parts[1] || "dtkace";
+    const dashMsgId = parts[2] ? parseInt(parts[2], 10) : null;
+    const maskHex = parts[3] || "1fff";
+
+    const repoLabel =
+      targetKey === "both"
+        ? "Both (DTKACE + DTLite)"
+        : targetKey === "dtlite"
+        ? "DTLite Plus"
+        : "DTKACE Plus";
+    const promptTag = createPromptMetadataTag("secret_tweak", targetKey, dashMsgId, maskHex);
+
+    const promptLabel =
+      `🔐 **INPUT: SECRET TWEAK ENV (TWEAK_URL)**\n──────────────────────────────\n` +
+      `Target: \`${repoLabel}\`\n\n` +
+      `Please reply with your direct tweak \`.deb\` URL.\n` +
+      `It will be securely encrypted via Libsodium (X25519) and updated directly in GitHub repository secrets!`;
+
+    const sentPrompt = await sendMessage(
+      env.TELEGRAM_BOT_TOKEN,
+      cbChatId,
+      `${promptTag}${promptLabel}`,
+      {
+        reply_markup: {
+          force_reply: true,
+          input_field_placeholder: "Paste direct .deb tweak URL...",
+        },
+      }
+    );
+
+    const session = (await getSession(env, cbChatId)) || {};
+    session.pendingPromptId = sentPrompt?.message_id;
+    session.pendingField = "secret_tweak";
+    session.targetKey = targetKey;
+    session.dashMsgId = dashMsgId;
+    session.maskHex = maskHex;
+    await saveSession(env, cbChatId, session);
+
+    await answerCallbackQuery(env.TELEGRAM_BOT_TOKEN, queryId);
     return new Response("OK", { status: 200 });
   }
 

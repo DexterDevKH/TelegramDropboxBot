@@ -18,6 +18,8 @@ from src.formatters import (
     parse_content_disposition_filename,
     extract_filename_from_url,
     resolve_dropbox_destination,
+    match_app_bundle,
+    extract_ipa_bundle_id,
 )
 
 class TestFormatters(unittest.TestCase):
@@ -201,6 +203,47 @@ class TestFormatters(unittest.TestCase):
         self.assertEqual(dest_custom, "/CustomDEB/tweak.deb")
         self.assertEqual(ret_custom, "/CustomDEB")
         self.assertEqual(vault_custom, "/CustomDEB")
+
+    def test_match_app_bundle(self):
+        # YouTube matches
+        self.assertEqual(match_app_bundle("com.google.ios.youtube"), "com.google.ios.youtube")
+        self.assertEqual(match_app_bundle("YouTube_v20.10.1.ipa"), "com.google.ios.youtube")
+        self.assertEqual(match_app_bundle("DTKACE_Plus_v20.02.ipa"), "com.google.ios.youtube")
+        self.assertEqual(match_app_bundle("DTLite_v20.01.ipa"), "com.google.ios.youtube")
+        self.assertEqual(match_app_bundle("DexTube_20.01.ipa"), "com.google.ios.youtube")
+
+        # YouTube Music matches
+        self.assertEqual(match_app_bundle("com.google.ios.youtubemusic"), "com.google.ios.youtubemusic")
+        self.assertEqual(match_app_bundle("YouTubeMusic_v8.01.ipa"), "com.google.ios.youtubemusic")
+        self.assertEqual(match_app_bundle("DTMusicUltimate_v8.01.ipa"), "com.google.ios.youtubemusic")
+        self.assertEqual(match_app_bundle("DTMusic_v8.02.ipa"), "com.google.ios.youtubemusic")
+        self.assertEqual(match_app_bundle("DexTube_Music.ipa"), "com.google.ios.youtubemusic")
+
+        # Non-matching
+        self.assertIsNone(match_app_bundle("Instagram.ipa"))
+        self.assertIsNone(match_app_bundle("random_tool.deb"))
+        self.assertIsNone(match_app_bundle(""))
+
+    def test_extract_ipa_bundle_id_with_mock_ipa(self):
+        import tempfile
+        import zipfile
+        import plistlib
+        import os
+
+        # Create temporary mock IPA zip file with Payload/MyApp.app/Info.plist
+        with tempfile.NamedTemporaryFile(suffix=".ipa", delete=False) as tmp:
+            tmp_path = tmp.name
+
+        try:
+            with zipfile.ZipFile(tmp_path, "w") as zf:
+                plist_bytes = plistlib.dumps({"CFBundleIdentifier": "com.google.ios.youtube", "CFBundleVersion": "20.10.1"})
+                zf.writestr("Payload/YouTube.app/Info.plist", plist_bytes)
+
+            extracted_bundle = extract_ipa_bundle_id(tmp_path)
+            self.assertEqual(extracted_bundle, "com.google.ios.youtube")
+        finally:
+            if os.path.exists(tmp_path):
+                os.remove(tmp_path)
 
 if __name__ == "__main__":
     unittest.main()

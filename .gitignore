@@ -45,6 +45,7 @@ node_modules/
 *.log
 *.tmp
 temp/
+.ios_versions_cache.json
 
 # OS specific
 .DS_Store

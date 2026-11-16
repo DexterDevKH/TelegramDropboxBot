@@ -7,6 +7,7 @@ import { sendMessage, answerCallbackQuery } from "./telegram.js";
 import { handleCallbackQuery } from "./handlers/callbacks.js";
 import { handleIncomingMessage } from "./handlers/messages.js";
 import { checkAllActiveBuilds } from "./handlers/scheduler.js";
+import { checkIosAppVersions } from "./handlers/version_checker.js";
 
 export default {
   async fetch(request, env, ctx) {
@@ -90,6 +91,11 @@ export default {
   },
 
   async scheduled(event, env, ctx) {
-    ctx.waitUntil(checkAllActiveBuilds(env));
+    ctx.waitUntil(
+      Promise.all([
+        checkAllActiveBuilds(env),
+        checkIosAppVersions(env),
+      ])
+    );
   },
 };

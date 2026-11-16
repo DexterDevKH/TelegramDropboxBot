@@ -122,6 +122,12 @@ def render_dashboard_buttons(state: Dict[str, Any]) -> List[List[Any]]:
                 f"ext:{target_key}".encode("utf-8"),
             ),
         ])
+        buttons.append([
+            Button.inline(
+                "🔐 Update Secret TWEAK_URL Env",
+                f"ask_sec:{target_key}".encode("utf-8"),
+            )
+        ])
 
     buttons.append([
         Button.inline(
@@ -283,4 +289,96 @@ def apply_native_copy_button(bot_token: str, chat_id: int, message_id: int, shar
     except Exception as exc:
         logger.error(f"Error applying Telegram Bot API CopyTextButton: {exc}")
         return False
+
+def render_version_status_card(apps_data: List[Dict[str, Any]]) -> Tuple[str, List[List[Any]]]:
+    """Renders iOS version overview presentation card with interactive build buttons."""
+    from src.version_checker import format_version_status_text
+    card = format_version_status_text(apps_data)
+    buttons = [
+        [
+            Button.inline("🚀 Build DTKACE Plus", b"url_build:dtkace"),
+            Button.inline("✨ Build DTLite Plus", b"url_build:dtlite"),
+        ],
+        [
+            Button.inline("🎵 Build DTMusicUltimate", b"url_build:dtmusic"),
+            Button.inline("🔄 Refresh Versions", b"check_versions"),
+        ],
+    ]
+    return card, buttons
+
+def render_version_alert_card(app_info: Dict[str, Any], prev_version: Optional[str] = None) -> Tuple[str, List[List[Any]]]:
+    """Renders alert card with 1-tap build triggers for newly released iOS version."""
+    from src.version_checker import format_version_alert_text
+    card = format_version_alert_text(app_info, prev_version)
+    bundle_id = app_info.get("bundleId", "")
+    store_url = app_info.get("trackViewUrl") or "https://apps.apple.com"
+
+    if bundle_id == "com.google.ios.youtubemusic":
+        buttons = [
+            [Button.inline("🎵 Build DTMusicUltimate", b"url_build:dtmusic")],
+            [Button.url("🌐 Open in App Store", store_url)],
+        ]
+    else:
+        buttons = [
+            [
+                Button.inline("🚀 Build DTKACE Plus", b"url_build:dtkace"),
+                Button.inline("✨ Build DTLite Plus", b"url_build:dtlite"),
+            ],
+            [Button.url("🌐 Open in App Store", store_url)],
+        ]
+    return card, buttons
+
+def render_secret_tweak_menu_text() -> str:
+    """Renders menu text for configuring GitHub Actions TWEAK_URL secret."""
+    return (
+        "🔐 **CONFIGURE SECRET TWEAK ENV (TWEAK_URL)**\n"
+        "──────────────────────────────\n"
+        "Select a target repository to update its GitHub Actions `TWEAK_URL` secret:\n\n"
+        "• 🚀 **DTKACE Plus** (`DexterDevKH/DTKACE`)\n"
+        "• ✨ **DTLite Plus** (`DexterDevKH/DTLite`)\n"
+        "• 🔄 **Both Repositories**\n"
+        "──────────────────────────────\n"
+        "💡 *The secret TWEAK_URL is securely encrypted via Libsodium (X25519) and used as the default tweak whenever you build.*"
+    )
+
+def render_secret_tweak_menu_buttons() -> List[List[Any]]:
+    """Renders menu buttons for selecting which repository secret to update."""
+    return [
+        [
+            Button.inline("🚀 DTKACE Plus", b"settweak_sel:dtkace"),
+            Button.inline("✨ DTLite Plus", b"settweak_sel:dtlite"),
+        ],
+        [
+            Button.inline("🔄 Update Both (DTKACE + DTLite)", b"settweak_sel:both"),
+        ],
+        [
+            Button.inline("❌ Cancel", b"cancel"),
+        ],
+    ]
+
+def render_secret_tweak_success_card(repo_label: str, tweak_url: str) -> str:
+    """Renders success card after updating GitHub repository secret."""
+    return (
+        "✅ **SECRET TWEAK ENV UPDATED!**\n"
+        "──────────────────────────────\n"
+        "🔐 **Secret Name:** `TWEAK_URL`\n"
+        f"📦 **Repository:** `{repo_label}`\n"
+        f"🔗 **Tweak URL:** `{tweak_url}`\n"
+        "🛡️ **Security:** Encrypted via Libsodium SealedBox (X25519)\n"
+        "──────────────────────────────\n"
+        "💡 *Future compilation runs without a custom tweak will automatically use this secret!*"
+    )
+
+def render_secret_tweak_failure_card(repo_label: str, error_msg: str) -> str:
+    """Renders error card if updating GitHub repository secret failed."""
+    return (
+        "❌ **FAILED TO UPDATE SECRET ENV**\n"
+        "──────────────────────────────\n"
+        f"📦 **Repository:** `{repo_label}`\n"
+        f"⚠️ **Error Details:** `{error_msg}`\n"
+        "──────────────────────────────\n"
+        "💡 *Please verify that GH_PAT has 'repo' or 'secrets:write' permissions in your secrets.*"
+    )
+
+
 

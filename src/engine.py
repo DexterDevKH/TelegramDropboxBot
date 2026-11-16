@@ -32,6 +32,7 @@ from src.formatters import (
     parse_run_url,
     extract_single_file_from_zip,
     resolve_dropbox_destination,
+    match_app_bundle,
 )
 from src.dropbox_service import DropboxService
 from src.github_service import GitHubService
@@ -327,10 +328,17 @@ class SyncApp:
             if pruned_items:
                 pruned_str = ", ".join([f"`{name}`" for name in pruned_items])
                 cap = self.config.get_max_files_for_folder(retention_folder)
-                completion_card += (
-                    f"\n♻️ **Retention Auto-Rotation (Cap: {cap} in `{vault_display}`)**\n"
-                    f"• Pruned oldest: {pruned_str}\n"
-                )
+                detected_bundle = match_app_bundle(final_filename)
+                if detected_bundle:
+                    completion_card += (
+                        f"\n♻️ **Retention Auto-Rotation (`{vault_display}`)**\n"
+                        f"• Auto-replaced matching `{detected_bundle}`: {pruned_str}\n"
+                    )
+                else:
+                    completion_card += (
+                        f"\n♻️ **Retention Auto-Rotation (Cap: {cap} in `{vault_display}`)**\n"
+                        f"• Pruned oldest: {pruned_str}\n"
+                    )
 
             if shared_url:
                 await self.tg.safe_edit_message(
@@ -659,10 +667,17 @@ class SyncApp:
             if pruned_items:
                 pruned_str = ", ".join([f"`{name}`" for name in pruned_items])
                 cap = self.config.get_max_files_for_folder(retention_folder)
-                completion_card += (
-                    f"\n♻️ **Retention Auto-Rotation (Cap: {cap} in `{vault_display}`)**\n"
-                    f"• Pruned oldest: {pruned_str}\n"
-                )
+                detected_bundle = match_app_bundle(final_filename)
+                if detected_bundle:
+                    completion_card += (
+                        f"\n♻️ **Retention Auto-Rotation (`{vault_display}`)**\n"
+                        f"• Auto-replaced matching `{detected_bundle}`: {pruned_str}\n"
+                    )
+                else:
+                    completion_card += (
+                        f"\n♻️ **Retention Auto-Rotation (Cap: {cap} in `{vault_display}`)**\n"
+                        f"• Pruned oldest: {pruned_str}\n"
+                    )
 
             if shared_url:
                 await self.tg.safe_edit_message(
@@ -886,11 +901,15 @@ class SyncApp:
                 )
                 return
 
-            # 9. Action: Ask for Input (IPA, Name, Bundle, Tweak)
-            if data.startswith("ask:") or data.startswith("input_ask:"):
+            # 9. Action: Ask for Input (IPA, Name, Bundle, Tweak, Secret Tweak)
+            if data.startswith("ask:") or data.startswith("input_ask:") or data.startswith("ask_sec:") or data.startswith("settweak_sel:"):
                 parts = data.split(":")
-                field = parts[1]
-                target_key = parts[2]
+                if data.startswith("ask_sec:") or data.startswith("settweak_sel:"):
+                    field = "secret_tweak"
+                    target_key = parts[1] if len(parts) > 1 else "dtkace"
+                else:
+                    field = parts[1]
+                    target_key = parts[2]
                 target = get_target(target_key) or BUILD_TARGETS["dtkace"]
                 state = self.user_dashboards.get(user_id) or {
                     "targetKey": target_key,
@@ -931,6 +950,19 @@ class SyncApp:
                         f"Please reply with a direct link to your custom deb/dylib, or type `default` to clear."
                     )
                     placeholder = "Paste custom tweak URL or type default"
+                elif field == "secret_tweak":
+                    repo_label = (
+                        "Both (DTKACE + DTLite)"
+                        if target_key in ("both", "all")
+                        else ("DTLite Plus" if target_key == "dtlite" else "DTKACE Plus")
+                    )
+                    prompt_label = (
+                        f"🔐 **INPUT: SECRET TWEAK ENV (TWEAK_URL)**\n──────────────────────────────\n"
+                        f"Target: `{repo_label}`\n\n"
+                        f"Please reply with your direct tweak `.deb` URL.\n"
+                        f"It will be securely encrypted via Libsodium (X25519) and updated directly in GitHub repository secrets!"
+                    )
+                    placeholder = "Paste direct .deb tweak URL..."
                 else:
                     return
 
@@ -1039,6 +1071,16 @@ class SyncApp:
                 )
                 return
 
+            # 13. Action: Refresh iOS Versions
+            if data == "check_versions":
+                from src.version_checker import check_all_ios_versions
+                from src.ui import render_version_status_card
+                await event.answer("Fetching latest iOS App Store versions...")
+                apps, _ = await asyncio.to_thread(check_all_ios_versions)
+                card, btns = render_version_status_card(apps)
+                await event.edit(card, buttons=btns)
+                return
+
         @self.tg.client.on(events.NewMessage)
         async def on_new_message(event):
             msg = event.message
@@ -1117,6 +1159,44 @@ class SyncApp:
                     else:
                         url_match = re.search(r"https?://[^\s<>\"]+", clean_val)
                         state["tweak"] = normalize_url(url_match.group(0)) if url_match else clean_val
+                elif field == "secret_tweak":
+                    url_match = re.search(r"https?://[^\s<>\"]+", clean_val)
+                    target_url = normalize_url(url_match.group(0)) if url_match else clean_val
+
+                    repos_to_update = []
+                    target_key = pending.get("targetKey", "dtkace")
+                    if target_key in ("both", "all"):
+                        repos_to_update.extend([BUILD_TARGETS["dtkace"]["repo"], BUILD_TARGETS["dtlite"]["repo"]])
+                    elif target_key == "dtlite":
+                        repos_to_update.append(BUILD_TARGETS["dtlite"]["repo"])
+                    else:
+                        repos_to_update.append(BUILD_TARGETS["dtkace"]["repo"])
+
+                    any_success = False
+                    last_error = ""
+                    for repo in repos_to_update:
+                        success, status, err = await self.gh.update_repository_secret(repo, "TWEAK_URL", target_url)
+                        if success:
+                            any_success = True
+                        else:
+                            last_error = err
+
+                    repo_label = (
+                        "DTKACE Plus & DTLite Plus"
+                        if len(repos_to_update) > 1
+                        else ("DTLite Plus" if target_key == "dtlite" else "DTKACE Plus")
+                    )
+
+                    from src.ui import render_secret_tweak_success_card, render_secret_tweak_failure_card
+                    if any_success:
+                        state["tweak"] = target_url
+                        card = render_secret_tweak_success_card(repo_label, target_url)
+                        await self.tg.client.send_message(
+                            chat_id, card, buttons=[[Button.inline("🚀 Open Build Menu", b"menu")]]
+                        )
+                    else:
+                        card = render_secret_tweak_failure_card(repo_label, last_error)
+                        await self.tg.client.send_message(chat_id, card)
 
                 self.user_dashboards[user_id] = state
                 self.pending_inputs.pop(user_id, None)
@@ -1240,6 +1320,64 @@ class SyncApp:
                 await self.tg.safe_edit_message(sent, ping_card)
                 return
 
+            # 5.5 Command: /checkversion, /version, /check
+            if raw_text.startswith(("/checkversion", "/version", "/check")):
+                wait_msg = await msg.reply("🍎 `Checking iOS App Store for latest YouTube & YouTube Music versions...`")
+                from src.version_checker import check_all_ios_versions
+                from src.ui import render_version_status_card
+                apps, _ = await asyncio.to_thread(check_all_ios_versions)
+                card, btns = render_version_status_card(apps)
+                await self.tg.safe_edit_message(wait_msg, card, buttons=btns)
+                return
+
+            # 5.6 Command: /settweak, /secret, /tweaksecret
+            if raw_text.startswith(("/settweak", "/secret", "/tweaksecret")):
+                args = raw_text.strip().split()
+                if len(args) >= 3:
+                    target_arg = args[1].lower()
+                    url_match = re.search(r"https?://[^\s<>\"]+", raw_text)
+                    target_url = normalize_url(url_match.group(0)) if url_match else args[2]
+
+                    repos_to_update = []
+                    if target_arg in ("both", "all"):
+                        repos_to_update.extend([BUILD_TARGETS["dtkace"]["repo"], BUILD_TARGETS["dtlite"]["repo"]])
+                    elif target_arg == "dtlite":
+                        repos_to_update.append(BUILD_TARGETS["dtlite"]["repo"])
+                    else:
+                        repos_to_update.append(BUILD_TARGETS["dtkace"]["repo"])
+
+                    wait_msg = await msg.reply("🔐 `Encrypting and updating TWEAK_URL secret on GitHub...`")
+
+                    any_success = False
+                    last_error = ""
+                    for repo in repos_to_update:
+                        success, status, err = await self.gh.update_repository_secret(repo, "TWEAK_URL", target_url)
+                        if success:
+                            any_success = True
+                        else:
+                            last_error = err
+
+                    repo_label = (
+                        "DTKACE Plus & DTLite Plus"
+                        if len(repos_to_update) > 1
+                        else ("DTLite Plus" if target_arg == "dtlite" else "DTKACE Plus")
+                    )
+
+                    from src.ui import render_secret_tweak_success_card, render_secret_tweak_failure_card
+                    card = (
+                        render_secret_tweak_success_card(repo_label, target_url)
+                        if any_success
+                        else render_secret_tweak_failure_card(repo_label, last_error)
+                    )
+                    btns = [[Button.inline("🚀 Open Build Menu", b"menu")]] if any_success else None
+                    await self.tg.safe_edit_message(wait_msg, card, buttons=btns)
+                    return
+
+                # Interactive Menu
+                from src.ui import render_secret_tweak_menu_text, render_secret_tweak_menu_buttons
+                await msg.reply(render_secret_tweak_menu_text(), buttons=render_secret_tweak_menu_buttons())
+                return
+
             # 6. Command: /status, /info
             if raw_text in ["/status", "/info"]:
                 elapsed = int(time.time() - self.start_timestamp)
@@ -1252,6 +1390,8 @@ class SyncApp:
                     f"📁 **IPA Vault:** `{self.config.dropbox_ipa_folder}`\n"
                     f"📁 **DEB Vault:** `{self.config.dropbox_deb_folder}`\n"
                     f"📦 **Retention Cap:** `{self.config.max_files_in_folder} files max / folder{deb_cap_str}`\n"
+                    "♻️ **Auto-Rotation:** `Bundle-Aware (YouTube & YouTube Music)`\n"
+                    "🍎 **iOS Version Monitor:** `Active (YouTube & YouTube Music)`\n"
                     f"🚀 **Workflow Builder:** Active (`/build`)\n"
                     f"📈 **Transfers Completed:** `{self.session_transfers_count} files` (`{format_size(self.session_transfers_bytes)}`)"
                 )
@@ -1267,6 +1407,8 @@ class SyncApp:
                     "🚀 **iOS Workflow Builder:** Use `/build` to configure tweaks & trigger builds.\n\n"
                     "✨ **Available Commands:**\n"
                     "• `/build` — Configure parameters & trigger GitHub Actions builds\n"
+                    "• `/settweak` — Update secret TWEAK_URL env for DTKACE and DTLite\n"
+                    "• `/checkversion` — Check official iOS App Store releases for YouTube & YouTube Music\n"
                     "• `/status` — View real-time runner status & health\n"
                     "• `/ping` — Measure network round-trip latency\n"
                     "• `/stop` — Safely disconnect runner\n"
@@ -1385,11 +1527,44 @@ class SyncApp:
         await self.tg.disconnect()
         logger.info("Build Tracker Runner completed cleanly.")
 
+    async def version_monitor_daemon_loop(self):
+        """Periodically monitors iOS App Store for YouTube and YouTube Music releases."""
+        from src.version_checker import check_all_ios_versions
+        from src.ui import render_version_alert_card
+        # Brief initial delay after boot
+        await asyncio.sleep(15)
+        while not self.shutdown_event.is_set():
+            try:
+                apps, alerts = await asyncio.to_thread(check_all_ios_versions)
+                if alerts:
+                    recipients = list(self.config.authorized_user_ids)
+                    if self.config.target_chat_id and self.config.target_chat_id not in recipients:
+                        recipients.append(self.config.target_chat_id)
+
+                    for app_info, prev_ver in alerts:
+                        card, btns = render_version_alert_card(app_info, prev_ver)
+                        for r_id in recipients:
+                            try:
+                                await self.tg.client.send_message(r_id, card, buttons=btns, link_preview=False)
+                            except Exception as e:
+                                logger.warning(f"Failed to deliver iOS version alert to {r_id}: {e}")
+            except Exception as exc:
+                logger.debug(f"Version monitor daemon loop error: {exc}")
+
+            # Sleep 15 minutes or until shutdown
+            try:
+                await asyncio.wait_for(self.shutdown_event.wait(), timeout=900)
+            except asyncio.TimeoutError:
+                pass
+
     async def run_daemon(self):
         """Runs client continuously in daemon mode for local development or VPS."""
         await self.tg.start()
         self.dbx.initialize()
         self.register_event_handlers()
+
+        # Launch background iOS version monitor daemon task
+        asyncio.create_task(self.version_monitor_daemon_loop())
 
         logger.info("┌" + "─" * 68 + "┐")
         logger.info("│ ⚡ STANDALONE DAEMON MODE (LOCAL / PERSISTENT)                   │")
@@ -1398,6 +1573,7 @@ class SyncApp:
         logger.info(f"│ • IPA Folder:        {self.config.dropbox_ipa_folder:<46} │")
         logger.info(f"│ • DEB Folder:        {self.config.dropbox_deb_folder:<46} │")
         logger.info(f"│ • Retention Cap:     {self.config.max_files_in_folder} files max / folder{' ':<22} │")
+        logger.info(f"│ • iOS Version Alert: Active (YouTube & YouTube Music){' ':<23} │")
         logger.info(f"│ • Workflow Builder:  Active (/build){' ':<33} │")
         logger.info("└" + "─" * 68 + "┘")
 

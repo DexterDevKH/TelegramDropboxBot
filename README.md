@@ -27,7 +27,13 @@ Powered by a 24/7 **Cloudflare Worker Global Edge Gateway** (<20ms latency) and 
   - Target repositories: **DTKACE Plus**, **DTLite Plus**, and **DTMusicUltimate**.
   - **Stateless Bitmask Engine**: Toggles 13 modular tweak extensions instantly without brittle regex parsing or server session limits.
   - Single-use force reply prompts with clean chat auto-cleanup (prompts and input messages are automatically deleted upon receipt).
-- **♻️ Automated FIFO Folder Retention**: Automatically prunes the oldest files when folder capacity exceeds the configured cap (`MAX_FILES_IN_FOLDER`) across both `/IPA` and `/DEB` vaults.
+- **♻️ Automated FIFO & Bundle-Aware Auto-Rotation**:
+  - Automatically prunes the oldest files when folder capacity exceeds the configured cap (`MAX_FILES_IN_FOLDER`) across both `/IPA` and `/DEB` vaults.
+  - **Smart Same-App Replacement**: When uploading a YouTube IPA (`com.google.ios.youtube`), it automatically rotates out and replaces the existing YouTube IPA in Dropbox. When uploading a YouTube Music IPA (`com.google.ios.youtubemusic`), it automatically replaces the existing YouTube Music IPA, preventing version collisions.
+- **🍎 24/7 iOS Version Monitor & Instant Alert Daemon**:
+  - Continuously queries official Apple App Store APIs for new iOS releases of **YouTube** (`com.google.ios.youtube`) and **YouTube Music** (`com.google.ios.youtubemusic`).
+  - Automatically delivers rich alert cards to authorized Telegram users with changelog release notes and 1-tap `/build` compile buttons as soon as a new version is released.
+- **🔐 Secret Tweak Environment Manager (`/settweak`)**: Change and update the GitHub Actions `TWEAK_URL` secret directly from Telegram for **DTKACE Plus** (`DexterDevKH/DTKACE`), **DTLite Plus** (`DexterDevKH/DTLite`), or both repositories simultaneously. Secrets are encrypted end-to-end via Libsodium SealedBox (X25519) before being pushed to the GitHub Actions REST API.
 - **📁 Smart Destination Routing**: Automatically stores `.ipa` files inside the designated IPA vault (`DROPBOX_IPA_FOLDER`, default: `/IPA`), and all non-IPA payloads (e.g. rootless `.deb` tweaks, documents, media) inside the DEB vault (`DROPBOX_DEB_FOLDER`, default: `/DEB`) with FIFO retention applied to both vaults.
 - **🛡️ Privacy Shield & Log Sanitization**: Automatically masks transferred filenames (`se***t.pdf`), redacts Telegram user IDs, hides Dropbox account details, and dynamically registers `::add-mask::` on all secrets in GitHub Actions console logs.
 - **🧹 Auto-Purge Run History**: Automated cleanup workflow (`cleanup.yml`) and pre/post steps automatically delete completed workflow runs and execution logs from GitHub Actions.
@@ -73,6 +79,8 @@ Powered by a 24/7 **Cloudflare Worker Global Edge Gateway** (<20ms latency) and 
 | Command | Scope | Description |
 | :--- | :---: | :--- |
 | `/build` | Edge Gateway | Opens interactive menu to configure parameters and trigger GitHub Actions builds for DTKACE, DTLite, or DTMusic |
+| `/settweak` or `/secret` | Edge / Runner | Update secret `TWEAK_URL` environment variable on GitHub for DTKACE Plus and DTLite Plus |
+| `/checkversion` or `/version` | Edge / Runner | Queries official Apple App Store for current YouTube and YouTube Music iOS releases |
 | `/status` or `/info` | Edge Gateway | Displays real-time gateway health, cloud quota, target repo, and runner state |
 | `/ping` | Edge Gateway | Measures round-trip edge latency (~15ms) |
 | `/cancel` | Edge Gateway | Cleanly aborts any active parameter prompt and removes leftover messages |

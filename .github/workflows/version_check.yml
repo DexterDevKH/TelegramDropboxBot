@@ -1,0 +1,34 @@
+name: iOS App Store Version Check & Alert Daemon
+
+on:
+  schedule:
+    # Run every 4 hours automatically
+    - cron: '0 */4 * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: ios-version-check
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  check-versions:
+    name: Check YouTube & YouTube Music iOS Versions
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Run iOS Version Monitor & Alert Service
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          AUTHORIZED_USER_IDS: ${{ secrets.AUTHORIZED_USER_IDS }}
+        run: |
+          python -m src.version_checker

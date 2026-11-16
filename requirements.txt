@@ -8,5 +8,8 @@ dropbox>=11.36.2
 # HTTP Client for Bot API Direct Clipboard Actions & GitHub REST API
 requests>=2.31.0
 
+# Cryptography & GitHub Actions Secrets Encryption (Sodium Box)
+pynacl>=1.5.0
+
 # Environment Variable Management
 python-dotenv>=1.0.0

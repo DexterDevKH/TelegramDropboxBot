@@ -11,5 +11,9 @@
   },
   "devDependencies": {
     "wrangler": "^3.109.2"
+  },
+  "dependencies": {
+    "blake2b": "^2.1.4",
+    "tweetnacl": "^1.0.3"
   }
 }

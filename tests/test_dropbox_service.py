@@ -108,6 +108,48 @@ class TestDropboxRetention(unittest.TestCase):
         self.assertEqual(self.service.enforce_folder_retention("/DEB", max_files=0), [])
         self.mock_client.files_delete_v2.assert_not_called()
 
+    def test_auto_rotation_replaces_same_youtube_bundle(self):
+        """Tests that uploading com.google.ios.youtube replaces previous YouTube IPAs while preserving YouTube Music."""
+        # Setup: YouTube Music (older, 500), Old YouTube (1000), New YouTube (1500)
+        yt_music = self._create_mock_file("DTMusic_8.01.ipa", "/ipa/dtmusic_8.01.ipa", 500)
+        old_yt = self._create_mock_file("YouTube_20.01.ipa", "/ipa/youtube_20.01.ipa", 1000)
+        new_yt = self._create_mock_file("YouTube_20.02.ipa", "/ipa/youtube_20.02.ipa", 1500)
+
+        mock_result = MagicMock()
+        mock_result.entries = [yt_music, old_yt, new_yt]
+        mock_result.has_more = False
+        self.mock_client.files_list_folder.return_value = mock_result
+
+        deleted = self.service.enforce_folder_retention(
+            "/IPA",
+            max_files=2,
+            incoming_bundle="com.google.ios.youtube",
+            exclude_path="/ipa/youtube_20.02.ipa",
+        )
+        self.assertEqual(deleted, ["YouTube_20.01.ipa"])
+        self.mock_client.files_delete_v2.assert_called_once_with("/ipa/youtube_20.01.ipa")
+
+    def test_auto_rotation_replaces_same_youtubemusic_bundle(self):
+        """Tests that uploading com.google.ios.youtubemusic replaces previous YouTube Music IPAs while preserving YouTube."""
+        # Setup: YouTube (older, 500), Old YouTube Music (1000), New YouTube Music (1500)
+        yt = self._create_mock_file("YouTube_20.01.ipa", "/ipa/youtube_20.01.ipa", 500)
+        old_ytm = self._create_mock_file("DTMusic_8.01.ipa", "/ipa/dtmusic_8.01.ipa", 1000)
+        new_ytm = self._create_mock_file("DTMusic_8.02.ipa", "/ipa/dtmusic_8.02.ipa", 1500)
+
+        mock_result = MagicMock()
+        mock_result.entries = [yt, old_ytm, new_ytm]
+        mock_result.has_more = False
+        self.mock_client.files_list_folder.return_value = mock_result
+
+        deleted = self.service.enforce_folder_retention(
+            "/IPA",
+            max_files=2,
+            incoming_bundle="com.google.ios.youtubemusic",
+            exclude_path="/ipa/dtmusic_8.02.ipa",
+        )
+        self.assertEqual(deleted, ["DTMusic_8.01.ipa"])
+        self.mock_client.files_delete_v2.assert_called_once_with("/ipa/dtmusic_8.01.ipa")
+
 if __name__ == "__main__":
     unittest.main()
 

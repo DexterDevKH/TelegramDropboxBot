@@ -7,6 +7,7 @@ import re
 import time
 import shutil
 import zipfile
+import plistlib
 import urllib.parse
 from typing import List, Dict, Any, Optional, Tuple
 
@@ -298,3 +299,57 @@ def resolve_dropbox_destination(
     retention_folder = folder
     vault_display = folder
     return dest_path, retention_folder, vault_display
+
+def extract_ipa_bundle_id(file_path: str) -> Optional[str]:
+    """
+    Extracts CFBundleIdentifier from an IPA file's embedded Info.plist.
+    Returns bundle ID string (e.g. 'com.google.ios.youtube') or None.
+    """
+    if not file_path or not os.path.exists(file_path):
+        return None
+    try:
+        if not zipfile.is_zipfile(file_path):
+            return None
+        with zipfile.ZipFile(file_path, "r") as zf:
+            for item in zf.namelist():
+                # Info.plist is inside Payload/<AppName>.app/Info.plist
+                if item.startswith("Payload/") and item.endswith(".app/Info.plist"):
+                    with zf.open(item) as plist_file:
+                        data = plistlib.load(plist_file)
+                        bundle_id = data.get("CFBundleIdentifier")
+                        if bundle_id:
+                            return str(bundle_id).strip()
+    except Exception:
+        pass
+    return None
+
+def match_app_bundle(identifier_or_name: str) -> Optional[str]:
+    """
+    Identifies whether a bundle identifier or filename belongs to YouTube or YouTube Music.
+    Returns:
+      - 'com.google.ios.youtubemusic' for YouTube Music
+      - 'com.google.ios.youtube' for YouTube
+      - None if neither matches.
+    """
+    if not identifier_or_name:
+        return None
+    clean = identifier_or_name.strip().lower()
+
+    # Priority 1: Exact / substring check for YouTube Music
+    if "com.google.ios.youtubemusic" in clean:
+        return "com.google.ios.youtubemusic"
+    if "youtubemusic" in clean or "dtmusic" in clean:
+        return "com.google.ios.youtubemusic"
+    if "music" in clean and ("youtube" in clean or "yt" in clean or "dextube" in clean):
+        return "com.google.ios.youtubemusic"
+
+    # Priority 2: Exact / substring check for YouTube
+    if "com.google.ios.youtube" in clean:
+        return "com.google.ios.youtube"
+    if "dtkace" in clean or "dtlite" in clean:
+        return "com.google.ios.youtube"
+    if "youtube" in clean or "dextube" in clean:
+        return "com.google.ios.youtube"
+
+    return None
+

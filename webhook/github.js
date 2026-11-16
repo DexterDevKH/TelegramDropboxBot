@@ -3,6 +3,9 @@
  * Dispatches repository_dispatch, workflow_dispatch, and tracks live build progress & releases.
  */
 
+import nacl from "tweetnacl";
+import blake2b from "blake2b";
+
 const GITHUB_API_URL = "https://api.github.com";
 
 function getHeaders(pat) {
@@ -210,3 +213,100 @@ export async function getRunArtifacts(pat, repo, runId) {
     return [];
   }
 }
+
+/**
+ * Encrypts a plaintext secret value using a repository's Base64 public key (Libsodium sealed box).
+ */
+export function sealSecret(secretValue, publicKeyBase64) {
+  const messageBytes = new TextEncoder().encode(secretValue);
+  const binaryDer = atob(publicKeyBase64);
+  const publicKeyBytes = new Uint8Array(binaryDer.length);
+  for (let i = 0; i < binaryDer.length; i++) {
+    publicKeyBytes[i] = binaryDer.charCodeAt(i);
+  }
+
+  const ephem = nacl.box.keyPair();
+  const hash = blake2b(24);
+  hash.update(ephem.publicKey);
+  hash.update(publicKeyBytes);
+  const nonce = hash.digest();
+
+  const ciphertext = nacl.box(messageBytes, nonce, publicKeyBytes, ephem.secretKey);
+  const sealed = new Uint8Array(ephem.publicKey.length + ciphertext.length);
+  sealed.set(ephem.publicKey);
+  sealed.set(ciphertext, ephem.publicKey.length);
+
+  let binary = "";
+  for (let i = 0; i < sealed.length; i++) {
+    binary += String.fromCharCode(sealed[i]);
+  }
+  return btoa(binary);
+}
+
+/**
+ * Updates a GitHub Actions repository secret (e.g. TWEAK_URL) via REST API.
+ */
+export async function updateRepositorySecret(pat, repo, secretName, secretValue) {
+  if (!pat) {
+    return {
+      success: false,
+      status: 401,
+      error: "Missing GH_PAT secret. Configure GH_PAT with 'repo' or 'secrets:write' permissions.",
+    };
+  }
+
+  try {
+    // 1. Fetch the repository's Actions public key
+    const pubKeyUrl = `${GITHUB_API_URL}/repos/${repo}/actions/secrets/public-key`;
+    const pubKeyRes = await fetch(pubKeyUrl, {
+      method: "GET",
+      headers: getHeaders(pat),
+    });
+
+    if (!pubKeyRes.ok) {
+      const errText = await pubKeyRes.text();
+      return {
+        success: false,
+        status: pubKeyRes.status,
+        error: `Failed to fetch repo public key: ${errText}`,
+      };
+    }
+
+    const { key, key_id: keyId } = await pubKeyRes.json();
+    if (!key || !keyId) {
+      return {
+        success: false,
+        status: 500,
+        error: "Repository public key data is incomplete.",
+      };
+    }
+
+    // 2. Encrypt the secret value using Libsodium sealed box
+    const encryptedValue = sealSecret(secretValue, key);
+
+    // 3. Put the encrypted secret into the repository
+    const putUrl = `${GITHUB_API_URL}/repos/${repo}/actions/secrets/${secretName}`;
+    const putRes = await fetch(putUrl, {
+      method: "PUT",
+      headers: getHeaders(pat),
+      body: JSON.stringify({
+        encrypted_value: encryptedValue,
+        key_id: keyId,
+      }),
+    });
+
+    if (putRes.status === 201 || putRes.status === 204 || putRes.ok) {
+      return { success: true, status: putRes.status };
+    }
+
+    const putErr = await putRes.text();
+    return {
+      success: false,
+      status: putRes.status,
+      error: `Failed to update secret: ${putErr}`,
+    };
+  } catch (err) {
+    return { success: false, status: 500, error: err.message };
+  }
+}
+

@@ -21,6 +21,7 @@ import {
   dispatchSyncPipeline,
   getArtifactDetails,
   getRunArtifacts,
+  updateRepositorySecret,
 } from "../github.js";
 import {
   renderMainMenuText,
@@ -35,7 +36,12 @@ import {
   renderMediaNoticeCard,
   renderUrlNoticeCard,
   renderUrlDetectedCard,
+  renderSecretTweakMenuText,
+  renderSecretTweakMenuButtons,
+  renderSecretTweakSuccessCard,
+  renderSecretTweakFailureCard,
 } from "../ui.js";
+import { checkIosAppVersions, renderVersionStatusCard } from "./version_checker.js";
 
 export async function handleIncomingMessage(message, env, ctx) {
   const chatId = message.chat?.id;
@@ -112,6 +118,73 @@ export async function handleIncomingMessage(message, env, ctx) {
         const urlMatch = cleanVal.match(/https?:\/\/[^\s<>"]+/i);
         state.tweak = urlMatch ? normalizeUrl(urlMatch[0]) : cleanVal;
       }
+    } else if (field === "secret_tweak") {
+      const urlMatch = cleanVal.match(/https?:\/\/[^\s<>"]+/i);
+      const targetUrl = urlMatch ? normalizeUrl(urlMatch[0]) : cleanVal;
+
+      const promptMsgId = message.reply_to_message?.message_id || session?.pendingPromptId;
+      if (promptMsgId) {
+        await deleteMessage(env.TELEGRAM_BOT_TOKEN, chatId, promptMsgId);
+      }
+      await deleteMessage(env.TELEGRAM_BOT_TOKEN, chatId, messageId);
+
+      const reposToUpdate = [];
+      if (targetKey === "both" || targetKey === "all") {
+        reposToUpdate.push(BUILD_TARGETS.dtkace.repo);
+        reposToUpdate.push(BUILD_TARGETS.dtlite.repo);
+      } else if (targetKey === "dtlite") {
+        reposToUpdate.push(BUILD_TARGETS.dtlite.repo);
+      } else {
+        reposToUpdate.push(BUILD_TARGETS.dtkace.repo);
+      }
+
+      let anySuccess = false;
+      let lastError = "";
+
+      for (const repo of reposToUpdate) {
+        const res = await updateRepositorySecret(env.GH_PAT, repo, "TWEAK_URL", targetUrl);
+        if (res.success) {
+          anySuccess = true;
+        } else {
+          lastError = res.error || `HTTP ${res.status}`;
+        }
+      }
+
+      const repoLabel =
+        reposToUpdate.length > 1
+          ? "DTKACE Plus & DTLite Plus"
+          : targetKey === "dtlite"
+          ? "DTLite Plus"
+          : "DTKACE Plus";
+
+      if (anySuccess) {
+        state.tweak = targetUrl;
+        state.pendingPromptId = null;
+        state.pendingField = null;
+        await saveSession(env, chatId, state);
+
+        const successCard = renderSecretTweakSuccessCard(repoLabel, targetUrl);
+        await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, successCard, {
+          reply_markup: {
+            inline_keyboard: [[{ text: "🚀 Open Build Menu", callback_data: "menu" }]],
+          },
+        });
+      } else {
+        const failCard = renderSecretTweakFailureCard(repoLabel, lastError);
+        await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, failCard);
+      }
+
+      if (dashMsgId) {
+        await editMessageText(
+          env.TELEGRAM_BOT_TOKEN,
+          chatId,
+          dashMsgId,
+          renderDashboardText(state),
+          { reply_markup: { inline_keyboard: renderDashboardButtons(state, dashMsgId) } }
+        );
+      }
+
+      return new Response("OK", { status: 200 });
     }
 
     // Clean chat: Delete prompt message and user reply message
@@ -325,6 +398,88 @@ export async function handleIncomingMessage(message, env, ctx) {
     if (cmd === "/ping") {
       await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, renderPingCard(), {
         reply_to_message_id: messageId,
+      });
+      return new Response("OK", { status: 200 });
+    }
+
+    if (cmd === "/checkversion" || cmd === "/version" || cmd === "/check") {
+      const waitMsg = await sendMessage(
+        env.TELEGRAM_BOT_TOKEN,
+        chatId,
+        "🍎 `Checking iOS App Store for latest YouTube & YouTube Music versions...`",
+        { reply_to_message_id: messageId }
+      );
+      const { apps } = await checkIosAppVersions(env, true);
+      const statusCard = renderVersionStatusCard(apps);
+      if (waitMsg?.message_id) {
+        await editMessageText(env.TELEGRAM_BOT_TOKEN, chatId, waitMsg.message_id, statusCard.text, {
+          reply_markup: { inline_keyboard: statusCard.buttons },
+        });
+      } else {
+        await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, statusCard.text, {
+          reply_to_message_id: messageId,
+          reply_markup: { inline_keyboard: statusCard.buttons },
+        });
+      }
+      return new Response("OK", { status: 200 });
+    }
+
+    if (cmd === "/settweak" || cmd === "/secret" || cmd === "/tweaksecret") {
+      const args = rawText.trim().split(/\s+/);
+      if (args.length >= 3) {
+        const targetArg = args[1].toLowerCase();
+        const urlMatch = rawText.match(/https?:\/\/[^\s<>"]+/i);
+        const targetUrl = urlMatch ? normalizeUrl(urlMatch[0]) : args[2];
+
+        const reposToUpdate = [];
+        if (targetArg === "both" || targetArg === "all") {
+          reposToUpdate.push(BUILD_TARGETS.dtkace.repo);
+          reposToUpdate.push(BUILD_TARGETS.dtlite.repo);
+        } else if (targetArg === "dtlite") {
+          reposToUpdate.push(BUILD_TARGETS.dtlite.repo);
+        } else {
+          reposToUpdate.push(BUILD_TARGETS.dtkace.repo);
+        }
+
+        const waitMsg = await sendMessage(
+          env.TELEGRAM_BOT_TOKEN,
+          chatId,
+          "🔐 `Encrypting and updating TWEAK_URL secret on GitHub...`",
+          { reply_to_message_id: messageId }
+        );
+
+        let anySuccess = false;
+        let lastError = "";
+
+        for (const repo of reposToUpdate) {
+          const res = await updateRepositorySecret(env.GH_PAT, repo, "TWEAK_URL", targetUrl);
+          if (res.success) anySuccess = true;
+          else lastError = res.error || `HTTP ${res.status}`;
+        }
+
+        const repoLabel =
+          reposToUpdate.length > 1
+            ? "DTKACE Plus & DTLite Plus"
+            : targetArg === "dtlite"
+            ? "DTLite Plus"
+            : "DTKACE Plus";
+
+        const cardText = anySuccess
+          ? renderSecretTweakSuccessCard(repoLabel, targetUrl)
+          : renderSecretTweakFailureCard(repoLabel, lastError);
+
+        await editMessageText(env.TELEGRAM_BOT_TOKEN, chatId, waitMsg?.message_id, cardText, {
+          reply_markup: anySuccess
+            ? { inline_keyboard: [[{ text: "🚀 Open Build Menu", callback_data: "menu" }]] }
+            : undefined,
+        });
+        return new Response("OK", { status: 200 });
+      }
+
+      // Interactive Menu
+      await sendMessage(env.TELEGRAM_BOT_TOKEN, chatId, renderSecretTweakMenuText(), {
+        reply_to_message_id: messageId,
+        reply_markup: { inline_keyboard: renderSecretTweakMenuButtons() },
       });
       return new Response("OK", { status: 200 });
     }

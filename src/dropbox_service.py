@@ -11,7 +11,7 @@ from dropbox.exceptions import ApiError, AuthError, BadInputError, DropboxExcept
 
 from src.config import AppConfig
 from src.privacy import mask_filename, register_github_mask
-from src.formatters import normalize_url
+from src.formatters import normalize_url, extract_ipa_bundle_id, match_app_bundle
 
 logger = logging.getLogger("SyncEngine.Dropbox")
 
@@ -61,10 +61,20 @@ class DropboxService:
             logger.critical(f"Dropbox Authentication Failure: {exc}")
             return False
 
-    def enforce_folder_retention(self, folder_path: str, max_files: int) -> List[str]:
+    def enforce_folder_retention(
+        self,
+        folder_path: str,
+        max_files: int,
+        incoming_bundle: Optional[str] = None,
+        exclude_path: Optional[str] = None,
+    ) -> List[str]:
         """
-        Enforces FIFO file retention on target Dropbox directory.
-        Deletes oldest files by server modification time if total exceeds max_files.
+        Enforces file retention on target Dropbox directory.
+        1. If incoming_bundle ('com.google.ios.youtube' or 'com.google.ios.youtubemusic') is specified:
+           Finds and deletes any existing file in folder_path with the SAME bundle identifier,
+           effectively replacing the previous version of that specific app.
+        2. Enforces general FIFO retention cap (deleting oldest files by server modification time
+           if remaining file count exceeds max_files).
         """
         deleted_files: List[str] = []
         if not self.client:
@@ -84,10 +94,35 @@ class DropboxService:
                     break
                 result = self.client.files_list_folder_continue(result.cursor)
 
-            if len(files) > max_files:
-                files.sort(key=lambda item: item.server_modified)
-                overflow_count = len(files) - max_files
-                for old_file in files[:overflow_count]:
+            # Auto-rotations: If incoming_bundle is known, replace existing file of the same app
+            normalized_incoming = match_app_bundle(incoming_bundle) if incoming_bundle else None
+            normalized_exclude = (exclude_path or "").lower().strip()
+
+            remaining_files: List[FileMetadata] = []
+            for item in files:
+                item_path_lower = item.path_lower.lower()
+                # Do not delete the newly uploaded file itself if it was excluded
+                if normalized_exclude and item_path_lower == normalized_exclude:
+                    remaining_files.append(item)
+                    continue
+
+                if normalized_incoming and match_app_bundle(item.name) == normalized_incoming:
+                    try:
+                        self.client.files_delete_v2(item.path_lower)
+                        deleted_files.append(item.name)
+                        log_file = mask_filename(item.name, self.config.privacy_mode)
+                        log_folder = "[PROTECTED_VAULT]" if self.config.privacy_mode else folder_path
+                        logger.info(f"Auto-Rotation: Replaced existing {normalized_incoming} file '{log_file}' in {log_folder}")
+                    except Exception as del_err:
+                        log_file = mask_filename(item.name, self.config.privacy_mode)
+                        logger.error(f"Failed to replace/prune '{log_file}': {del_err}")
+                else:
+                    remaining_files.append(item)
+
+            if len(remaining_files) > max_files:
+                remaining_files.sort(key=lambda item: item.server_modified)
+                overflow_count = len(remaining_files) - max_files
+                for old_file in remaining_files[:overflow_count]:
                     try:
                         self.client.files_delete_v2(old_file.path_lower)
                         deleted_files.append(old_file.name)
@@ -173,11 +208,24 @@ class DropboxService:
         )
         logger.info(f"Successfully committed file to Dropbox: {log_dest}")
 
-        # Enforce FIFO Retention on target subfolder (IPA or DEB)
+        # Enforce FIFO Retention & Same-App Auto-Rotation on target subfolder (IPA or DEB)
         pruned_files: List[str] = []
         if target_folder and target_folder.strip("/") != "":
             cap = self.config.get_max_files_for_folder(target_folder)
-            pruned_files = self.enforce_folder_retention(target_folder, max_files=cap)
+            
+            # Detect incoming bundle for auto-rotation replacement (com.google.ios.youtube or com.google.ios.youtubemusic)
+            incoming_bundle = None
+            if local_path.lower().endswith(".ipa"):
+                incoming_bundle = extract_ipa_bundle_id(local_path)
+            if not incoming_bundle:
+                incoming_bundle = match_app_bundle(os.path.basename(dest_path)) or match_app_bundle(local_path)
+
+            pruned_files = self.enforce_folder_retention(
+                target_folder,
+                max_files=cap,
+                incoming_bundle=incoming_bundle,
+                exclude_path=dest_path,
+            )
 
         # Also verify retention for DEB folder if file was uploaded to another folder
         deb_folder = self.config.dropbox_deb_folder

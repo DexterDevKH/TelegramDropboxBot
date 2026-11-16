@@ -256,3 +256,59 @@ class GitHubService:
             self.download_stream_url_sync, url, dest_path, progress_callback
         )
 
+    def update_repository_secret_sync(
+        self, repo: str, secret_name: str, secret_value: str
+    ) -> Tuple[bool, int, str]:
+        """
+        Updates a repository secret in GitHub Actions using libsodium sealed box encryption.
+        """
+        if not self.pat:
+            return False, 401, "Missing GH_PAT secret."
+
+        headers = self._get_headers()
+        # 1. Get repository public key
+        key_url = f"https://api.github.com/repos/{repo}/actions/secrets/public-key"
+        try:
+            key_resp = requests.get(key_url, headers=headers, timeout=15)
+            if key_resp.status_code != 200:
+                return False, key_resp.status_code, f"Failed to get public key: {key_resp.text}"
+            key_data = key_resp.json()
+            public_key_b64 = key_data.get("key")
+            key_id = key_data.get("key_id")
+            if not public_key_b64 or not key_id:
+                return False, 500, "Incomplete public key response from GitHub."
+        except Exception as exc:
+            return False, 500, f"Error getting repo public key: {exc}"
+
+        # 2. Encrypt secret value with sealed box
+        try:
+            import base64
+            from nacl import public, encoding
+            pub_key = public.PublicKey(public_key_b64.encode("utf-8"), encoding.Base64Encoder())
+            sealed_box = public.SealedBox(pub_key)
+            encrypted = sealed_box.encrypt(secret_value.encode("utf-8"))
+            encrypted_b64 = base64.b64encode(encrypted).decode("utf-8")
+        except Exception as exc:
+            return False, 500, f"Failed to encrypt secret value: {exc}"
+
+        # 3. PUT encrypted secret
+        put_url = f"https://api.github.com/repos/{repo}/actions/secrets/{secret_name}"
+        headers["Content-Type"] = "application/json"
+        body = {
+            "encrypted_value": encrypted_b64,
+            "key_id": key_id,
+        }
+        try:
+            put_resp = requests.put(put_url, headers=headers, json=body, timeout=15)
+            if put_resp.status_code in (201, 204):
+                return True, put_resp.status_code, "Secret updated successfully."
+            return False, put_resp.status_code, put_resp.text
+        except Exception as exc:
+            return False, 500, f"Error sending secret to GitHub: {exc}"
+
+    async def update_repository_secret(
+        self, repo: str, secret_name: str, secret_value: str
+    ) -> Tuple[bool, int, str]:
+        return await asyncio.to_thread(self.update_repository_secret_sync, repo, secret_name, secret_value)
+
+

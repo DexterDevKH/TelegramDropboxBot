@@ -122,6 +122,12 @@ export function renderDashboardButtons(state, dashMsgId) {
         callback_data: `ext:${tk}:${mid}:${mask}`,
       },
     ]);
+    buttons.push([
+      {
+        text: "🔐 Update Secret TWEAK_URL Env",
+        callback_data: `ask_sec:${tk}:${mid}:${mask}`,
+      },
+    ]);
   }
 
   buttons.push([
@@ -372,6 +378,7 @@ export function renderStatusCard(env) {
     "🛰️ **Pipeline Mode:** `100% Serverless On-Demand`\n" +
     "⚡ **Runner State:** `Standing By (0 idle usage)`\n" +
     "📦 **Payload Limit:** `Up to 2,000 MB (2.0 GB)`\n" +
+    "🍎 **iOS Version Monitor:** `Active (YouTube & YouTube Music)`\n" +
     "🚀 **Build Dispatcher:** `Active (/build)` with Stateless Bitmasks\n" +
     `🐙 **Target Repository:** \`${env.GH_REPO || "DexterDevKH/TelegramDropboxBot"}\`\n` +
     "──────────────────────────────\n" +
@@ -390,6 +397,8 @@ export function renderHelpCard() {
     "🚀 **GitHub Actions Builder:** Send `/build` to select a repo, configure inputs via buttons, and trigger builds.\n\n" +
     "✨ **Available Commands:**\n" +
     "• `/build` — Select an app, toggle extensions & configure inputs\n" +
+    "• `/settweak` — Update secret TWEAK_URL env for DTKACE and DTLite\n" +
+    "• `/checkversion` — Check official App Store releases for YouTube & YouTube Music\n" +
     "• `/status` — View real-time runner status & health\n" +
     "• `/ping` — Measure gateway round-trip latency\n" +
     "• `/help` — Display operational manual\n" +
@@ -477,4 +486,66 @@ export function renderUrlDetectedCard(rawUrl) {
 
   return { text, buttons };
 }
+
+/**
+ * Secret Tweak Environment Menu
+ */
+export function renderSecretTweakMenuText() {
+  return (
+    "🔐 **CONFIGURE SECRET TWEAK ENV (TWEAK_URL)**\n" +
+    "──────────────────────────────\n" +
+    "Select a target repository to update its GitHub Actions `TWEAK_URL` secret:\n\n" +
+    "• 🚀 **DTKACE Plus** (`DexterDevKH/DTKACE`)\n" +
+    "• ✨ **DTLite Plus** (`DexterDevKH/DTLite`)\n" +
+    "• 🔄 **Both Repositories**\n" +
+    "──────────────────────────────\n" +
+    "💡 *The secret TWEAK_URL is securely encrypted via Libsodium (X25519) and used as the default tweak whenever you build.*"
+  );
+}
+
+export function renderSecretTweakMenuButtons() {
+  return [
+    [
+      { text: "🚀 DTKACE Plus", callback_data: "settweak_sel:dtkace" },
+      { text: "✨ DTLite Plus", callback_data: "settweak_sel:dtlite" },
+    ],
+    [
+      { text: "🔄 Update Both (DTKACE + DTLite)", callback_data: "settweak_sel:both" },
+    ],
+    [
+      { text: "❌ Cancel", callback_data: "cancel" },
+    ],
+  ];
+}
+
+/**
+ * Secret Tweak Updated Success Card
+ */
+export function renderSecretTweakSuccessCard(repoLabel, tweakUrl) {
+  return (
+    "✅ **SECRET TWEAK ENV UPDATED!**\n" +
+    "──────────────────────────────\n" +
+    "🔐 **Secret Name:** `TWEAK_URL`\n" +
+    `📦 **Repository:** \`${repoLabel}\`\n` +
+    `🔗 **Tweak URL:** \`${tweakUrl}\`\n` +
+    "🛡️ **Security:** Encrypted via Libsodium SealedBox (X25519)\n" +
+    "──────────────────────────────\n" +
+    "💡 *Future compilation runs without a custom tweak will automatically use this secret!*"
+  );
+}
+
+/**
+ * Secret Tweak Update Failure Card
+ */
+export function renderSecretTweakFailureCard(repoLabel, errorMsg) {
+  return (
+    "❌ **FAILED TO UPDATE SECRET ENV**\n" +
+    "──────────────────────────────\n" +
+    `📦 **Repository:** \`${repoLabel}\`\n` +
+    `⚠️ **Error Details:** \`${errorMsg}\`\n` +
+    "──────────────────────────────\n" +
+    "💡 *Please verify that GH_PAT has 'repo' or 'secrets:write' permissions in Cloudflare Worker settings.*"
+  );
+}
+
 
