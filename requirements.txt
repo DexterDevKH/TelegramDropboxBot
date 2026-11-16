@@ -1,5 +1,14 @@
-# Telegram to Dropbox Cloud Sync Engine (Native Rust Core v3.1.0)
-#
-# Notice: The core ingestion and sync engine is built with high-performance native Rust.
-# The launcher (bot.py) and OAuth utility (get_refresh_token.py) use the Python standard library.
-# No external Python pip dependencies are required to run this project.
+# Telegram MTProto Client
+telethon>=1.36.0
+
+# Dropbox Cloud Storage SDK
+dropbox>=11.36.2
+
+# HTTP Client for Bot API Direct Clipboard Actions & GitHub REST API
+requests>=2.31.0
+
+# Cryptography & GitHub Actions Secrets Encryption (Sodium Box)
+pynacl>=1.5.0
+
+# Environment Variable Management
+python-dotenv>=1.0.0

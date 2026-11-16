@@ -21,11 +21,11 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Setup Rust Toolchain
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Rust Cache Action
-        uses: Swatinem/rust-cache@v2
+      - name: Initialize Python Runtime
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
 
       - name: Restore iOS Version State Cache
         uses: actions/cache@v4
@@ -35,9 +35,9 @@ jobs:
           restore-keys: |
             ios-versions-cache-
 
-      - name: Run iOS Version Monitor & Alert Service (Native Rust Core)
+      - name: Run iOS Version Monitor & Alert Service
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           AUTHORIZED_USER_IDS: ${{ secrets.AUTHORIZED_USER_IDS }}
         run: |
-          cargo run --release -- --check-versions
+          python bot.py --check-versions

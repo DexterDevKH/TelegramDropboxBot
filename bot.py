@@ -1,41 +1,48 @@
 #!/usr/bin/env python3
 """
 Telegram to Dropbox Cloud Sync & iOS IPA Workflow Builder
-High-Performance Native Rust Core Bridge (v3.1.0)
-
-Delegates execution to the compiled native Rust binary with zero overhead,
-maintaining 100% backward compatibility with existing CI pipelines.
+Production Entrypoint (Pure Python Architecture)
 """
 
-import os
 import sys
-import subprocess
 
-def find_binary():
-    base_dir = os.path.dirname(os.path.abspath(__file__))
-    bin_name = "telegram_dropbox_bot.exe" if sys.platform == "win32" else "telegram_dropbox_bot"
-    
-    candidates = [
-        os.path.join(base_dir, "target", "release", bin_name),
-        os.path.join(base_dir, "target", "debug", bin_name),
-    ]
-    for c in candidates:
-        if os.path.isfile(c) and os.access(c, os.X_OK):
-            return [c]
-    
-    # Fallback to cargo run
-    return ["cargo", "run", "--release", "--"]
 
 def main():
-    cmd = find_binary() + sys.argv[1:]
-    try:
-        proc = subprocess.run(cmd)
-        sys.exit(proc.returncode)
-    except KeyboardInterrupt:
+    if "--check-versions" in sys.argv:
+        from src.version_checker import (
+            check_all_ios_versions,
+            format_version_status_text,
+            format_version_alert_text,
+            send_telegram_alert_http,
+        )
+        import os
+
+        print("Checking iOS App Store versions for YouTube and YouTube Music...")
+        apps, new_alerts = check_all_ios_versions()
+        print(format_version_status_text(apps))
+
+        if new_alerts:
+            print(f"\nFound {len(new_alerts)} new version alert(s)!")
+            bot_tok = os.getenv("TELEGRAM_BOT_TOKEN")
+            auth_raw = os.getenv("AUTHORIZED_USER_IDS", "")
+            recipients = [
+                int(i.strip()) for i in auth_raw.split(",") if i.strip().isdigit()
+            ]
+
+            for app_info, prev_ver in new_alerts:
+                alert_text = format_version_alert_text(app_info, prev_ver)
+                print("\n" + alert_text)
+                if bot_tok and recipients:
+                    send_telegram_alert_http(bot_tok, recipients, alert_text)
+                    print(f"Alert dispatched to {len(recipients)} recipient(s).")
+        else:
+            print("\nAll tracked iOS apps are up to date.")
         sys.exit(0)
-    except Exception as exc:
-        print(f"FATAL: Failed to execute Rust core engine: {exc}", file=sys.stderr)
-        sys.exit(1)
+
+    from src.engine import main as engine_main
+
+    engine_main()
+
 
 if __name__ == "__main__":
     main()

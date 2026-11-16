@@ -45,51 +45,17 @@ jobs:
       - name: Checkout Source Code
         uses: actions/checkout@v4
 
-      - name: Restore Pre-Built Engine Binary
-        id: binary-cache
-        uses: actions/cache@v4
+      - name: Initialize Python Runtime
+        uses: actions/setup-python@v5
         with:
-          path: target/release/telegram_dropbox_bot
-          key: engine-bin-${{ runner.os }}-${{ hashFiles('Cargo.lock', 'Cargo.toml', 'src/**') }}
-          restore-keys: |
-            engine-bin-${{ runner.os }}-
+          python-version: '3.11'
+          cache: 'pip'
 
-      - name: Check Binary Status
-        id: check-bin
+      - name: Install Production Dependencies
         run: |
-          if [ -f target/release/telegram_dropbox_bot ]; then
-            chmod +x target/release/telegram_dropbox_bot
-            if ./target/release/telegram_dropbox_bot --help >/dev/null 2>&1; then
-              echo "ready=true" >> $GITHUB_OUTPUT
-              echo "✔ Pre-built binary verified and ready to execute."
-            else
-              echo "ready=false" >> $GITHUB_OUTPUT
-            fi
-          else
-            echo "ready=false" >> $GITHUB_OUTPUT
-          fi
-
-      - name: Setup Rust Toolchain
-        if: steps.check-bin.outputs.ready != 'true'
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Rust Cache Action
-        if: steps.check-bin.outputs.ready != 'true'
-        uses: Swatinem/rust-cache@v2
-
-      - name: Compile Native Core Engine
-        if: steps.check-bin.outputs.ready != 'true'
-        run: |
-          echo "::group::📦 Compiling High-Performance Native Core Engine"
-          cargo build --release
+          echo "::group::📦 Installing Dependencies (High-Speed Engine)"
+          pip install --no-cache-dir -r requirements.txt
           echo "::endgroup::"
-
-      - name: Ensure Engine Binary Executable
-        run: chmod +x target/release/telegram_dropbox_bot
-
-      - name: Setup MTProto Engine (Telethon)
-        run: |
-          pip install --no-cache-dir telethon
 
       - name: Pre-Flight Secrets & Privacy Shield Audit
         shell: bash
@@ -166,13 +132,13 @@ jobs:
         shell: bash
         run: |
           cat << 'EOF' >> $GITHUB_STEP_SUMMARY
-          # ⚡ Telegram to Dropbox Sync Pipeline (v3.1.0 Native Rust Core)
+          # ⚡ Telegram to Dropbox Sync Pipeline (v3.2.0 Python Core)
 
           ### 🛰️ Runner Specifications & Status
           | Property | Value |
           | :--- | :--- |
           | **Host Platform** | Ubuntu Linux (`ubuntu-latest`) |
-          | **Engine Runtime** | Native Rust Core (v3.1.0) via Cargo, Reqwest, Zip & Libsodium |
+          | **Engine Runtime** | Python 3.11 + Telethon MTProto Engine |
           | **Trigger Source** | `${{ github.event_name }}` |
           | **Concurrency Policy** | Queue per message (`cancel-in-progress: false`) |
           | **Privacy Shield** | 🛡️ Active (Filenames & user identities masked) |
@@ -186,7 +152,7 @@ jobs:
           | **Chunk Size** | `8 MB` | Streaming session upload chunk size |
           | **Direct Copy API** | `Telegram Bot API v7.0+` | Native one-tap clipboard copy buttons |
 
-          > 💡 **Active Service:** The native Rust core is now executing ingestion and streaming chunked upload to Dropbox.
+          > 💡 **Active Service:** The Python MTProto engine is executing direct binary ingestion and streaming chunked upload to Dropbox.
           EOF
 
       - name: Launch Cloud Sync / Build Tracker Daemon
@@ -225,22 +191,4 @@ jobs:
           LOG_LEVEL: ${{ github.event.inputs.log_level || 'INFO' }}
           GH_PAT: ${{ secrets.GH_PAT || secrets.PAT || secrets.GITHUB_TOKEN }}
         run: |
-          ./target/release/telegram_dropbox_bot
-
-      # - name: Auto-Purge Completed Workflow Runs
-      #   if: always()
-      #   shell: bash
-      #   env:
-      #     GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      #     GH_REPO: ${{ github.repository }}
-      #     GH_NO_PROMPT: "1"
-      #   run: |
-      #     echo "::group::🧹 Auto-Purging Completed Sync Pipeline Run Logs"
-      #     gh run list --repo "${{ github.repository }}" --workflow=bot.yml --status=completed --json databaseId -q '.[].databaseId' | while read -r run_id; do
-      #       if [ -n "$run_id" ]; then
-      #         echo "Purging completed run: $run_id"
-      #         gh api -X DELETE "repos/${{ github.repository }}/actions/runs/$run_id" || true
-      #       fi
-      #     done
-      #     echo "✔ Complete: All completed run logs and history have been purged."
-      #     echo "::endgroup::"
+          python bot.py

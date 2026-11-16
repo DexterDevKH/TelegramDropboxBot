@@ -4,7 +4,6 @@ on:
   workflow_run:
     workflows:
       - "Telegram to Dropbox Sync Pipeline"
-      - "Pre-Build Native Core Engine"
       - "iOS App Store Version Check & Alert Daemon"
     types:
       - completed
@@ -33,13 +32,13 @@ jobs:
           GH_REPO: ${{ github.repository }}
           GH_NO_PROMPT: "1"
         run: |
-          echo "::group::🧹 Auto-Purge: Retain 1 Most Recent Run Per Workflow"
+          echo "::group::🧹 Auto-Purging: Retaining 1 Most Recent Run Per Workflow"
 
           # Discover all workflows or fallback to known list
           WORKFLOW_PATHS=$(gh workflow list --repo "${{ github.repository }}" --json path -q '.[].path' 2>/dev/null || true)
           if [ -z "$WORKFLOW_PATHS" ]; then
             echo "Falling back to predefined workflow list..."
-            WORKFLOW_PATHS="bot.yml cleanup.yml prebuild.yml version_check.yml"
+            WORKFLOW_PATHS="bot.yml cleanup.yml version_check.yml"
           fi
 
           echo "Workflows to evaluate:"
