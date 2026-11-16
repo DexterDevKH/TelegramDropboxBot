@@ -1,7 +1,7 @@
 //! Main CLI Entrypoint for Telegram to Dropbox Cloud Sync Engine
 
-use std::process;
 use clap::Parser;
+use std::process;
 use tracing::{error, info, Level};
 use tracing_subscriber::FmtSubscriber;
 
@@ -56,6 +56,10 @@ struct Cli {
     /// Update TWEAK_URL secret on GitHub Actions (target tweak_url)
     #[arg(long, num_args = 2)]
     set_tweak: Option<Vec<String>>,
+
+    /// Interactively generate permanent Dropbox OAuth 2.0 offline refresh token
+    #[arg(long, visible_alias = "oauth")]
+    get_refresh_token: bool,
 }
 
 #[tokio::main]
@@ -66,6 +70,19 @@ async fn main() {
     let _ = tracing::subscriber::set_global_default(subscriber);
 
     let cli = Cli::parse();
+
+    // Standalone OAuth refresh token generator
+    if cli.get_refresh_token {
+        if let Err(err) =
+            telegram_dropbox_bot::dropbox::DropboxService::generate_refresh_token_interactive()
+                .await
+        {
+            eprintln!("❌ Error: {}", err);
+            process::exit(1);
+        }
+        process::exit(0);
+    }
+
     let mut config = match load_config() {
         Ok(c) => c,
         Err(err) => {
@@ -116,7 +133,10 @@ async fn main() {
             };
             let gh = GitHubService::new(config.gh_pat.clone());
             info!("Updating TWEAK_URL for repository '{}'...", repo);
-            match gh.update_repository_secret(repo, "TWEAK_URL", tweak_url).await {
+            match gh
+                .update_repository_secret(repo, "TWEAK_URL", tweak_url)
+                .await
+            {
                 Ok(msg) => {
                     println!("SUCCESS: {}", msg);
                     process::exit(0);
@@ -141,14 +161,24 @@ async fn main() {
     }
 
     // 3. Workflow Build Tracker Mode
-    if cli.tracker || (config.build_target_key.is_some() && config.target_chat_id.is_some() && config.target_message_id.is_some()) {
+    if cli.tracker
+        || (config.build_target_key.is_some()
+            && config.target_chat_id.is_some()
+            && config.target_message_id.is_some())
+    {
         let chat_id = config.target_chat_id.unwrap_or(0);
         let message_id = config.target_message_id.unwrap_or(0);
-        let target_key = config.build_target_key.clone().unwrap_or_else(|| "dtkace".to_string());
+        let target_key = config
+            .build_target_key
+            .clone()
+            .unwrap_or_else(|| "dtkace".to_string());
         let run_id = config.build_run_id;
         let start_time = config.build_start_time;
 
-        if let Err(err) = app.run_tracker(chat_id, message_id, &target_key, run_id, start_time).await {
+        if let Err(err) = app
+            .run_tracker(chat_id, message_id, &target_key, run_id, start_time)
+            .await
+        {
             error!("Tracker execution failed: {}", err);
             process::exit(1);
         }

@@ -1,7 +1,7 @@
 //! Dropbox Cloud Storage Client & Streaming Operations
 
 use std::fs::File;
-use std::io::{Read, Seek, SeekFrom};
+use std::io::{self, Read, Seek, SeekFrom, Write};
 use std::path::Path;
 use std::sync::Arc;
 use tokio::sync::RwLock;
@@ -12,9 +12,7 @@ use serde::{Deserialize, Serialize};
 use tracing::{error, info, warn};
 
 use crate::config::AppConfig;
-use crate::formatters::{
-    extract_ipa_bundle_id, match_app_bundle, normalize_url,
-};
+use crate::formatters::{extract_ipa_bundle_id, match_app_bundle, normalize_url};
 use crate::privacy::{mask_filename, register_github_mask};
 
 #[derive(Debug, Clone, Deserialize)]
@@ -161,7 +159,10 @@ impl DropboxService {
         if !resp.status().is_success() {
             let status = resp.status();
             let err_text = resp.text().await.unwrap_or_default();
-            return Err(format!("Dropbox OAuth token refresh error ({}): {}", status, err_text));
+            return Err(format!(
+                "Dropbox OAuth token refresh error ({}): {}",
+                status, err_text
+            ));
         }
 
         let token_data: DropboxTokenResponse = resp
@@ -361,7 +362,11 @@ impl DropboxService {
         let mut remaining_files: Vec<DropboxFileEntry> = Vec::new();
 
         for item in files {
-            let item_path = item.path_lower.as_deref().unwrap_or(&item.name).to_lowercase();
+            let item_path = item
+                .path_lower
+                .as_deref()
+                .unwrap_or(&item.name)
+                .to_lowercase();
             if !normalized_exclude.is_empty() && item_path == normalized_exclude {
                 remaining_files.push(item);
                 continue;
@@ -411,7 +416,10 @@ impl DropboxService {
                         } else {
                             folder_path
                         };
-                        info!("Retention Policy: Pruned oldest file '{}' from {}", log_file, log_folder);
+                        info!(
+                            "Retention Policy: Pruned oldest file '{}' from {}",
+                            log_file, log_folder
+                        );
                     }
                     Err(err) => {
                         let log_file = mask_filename(&old_file.name, self.config.privacy_mode);
@@ -571,7 +579,8 @@ impl DropboxService {
                     );
                     fin_headers.insert(
                         "Dropbox-API-Arg",
-                        HeaderValue::from_str(&serde_json::to_string(&finish_arg).unwrap()).unwrap(),
+                        HeaderValue::from_str(&serde_json::to_string(&finish_arg).unwrap())
+                            .unwrap(),
                     );
                     fin_headers.insert(
                         CONTENT_TYPE,
@@ -611,7 +620,8 @@ impl DropboxService {
                     );
                     app_headers.insert(
                         "Dropbox-API-Arg",
-                        HeaderValue::from_str(&serde_json::to_string(&append_arg).unwrap()).unwrap(),
+                        HeaderValue::from_str(&serde_json::to_string(&append_arg).unwrap())
+                            .unwrap(),
                     );
                     app_headers.insert(
                         CONTENT_TYPE,
@@ -655,7 +665,11 @@ impl DropboxService {
             let cap = self.config.get_max_files_for_folder(target_folder);
 
             let mut incoming_bundle = None;
-            if local_path.to_string_lossy().to_lowercase().ends_with(".ipa") {
+            if local_path
+                .to_string_lossy()
+                .to_lowercase()
+                .ends_with(".ipa")
+            {
                 incoming_bundle = extract_ipa_bundle_id(local_path);
             }
             if incoming_bundle.is_none() {
@@ -678,7 +692,8 @@ impl DropboxService {
 
         // Shared link generation
         let mut shared_url = String::new();
-        let create_link_url = "https://api.dropboxapi.com/2/sharing/create_shared_link_with_settings";
+        let create_link_url =
+            "https://api.dropboxapi.com/2/sharing/create_shared_link_with_settings";
         let link_body = serde_json::json!({ "path": dest_path });
 
         let link_resp = self
@@ -706,7 +721,8 @@ impl DropboxService {
                     .send()
                     .await
                 {
-                    if let Ok(list_data) = list_resp.json::<DropboxListSharedLinksResponse>().await {
+                    if let Ok(list_data) = list_resp.json::<DropboxListSharedLinksResponse>().await
+                    {
                         if let Some(first_link) = list_data.links.first() {
                             shared_url = first_link.url.clone();
                         }
@@ -716,5 +732,96 @@ impl DropboxService {
         }
 
         Ok((normalize_url(&shared_url), pruned_files))
+    }
+
+    /// Interactive terminal utility to generate permanent Dropbox OAuth 2.0 refresh tokens.
+    pub async fn generate_refresh_token_interactive() -> Result<String, String> {
+        println!("┌────────────────────────────────────────────────────────────────────┐");
+        println!("│ ⚡ DROPBOX OAUTH 2.0 PERMANENT REFRESH TOKEN GENERATOR            │");
+        println!("├────────────────────────────────────────────────────────────────────┤");
+        println!("│ Generates permanent offline refresh tokens for GitHub Actions CI   │");
+        println!("└────────────────────────────────────────────────────────────────────┘\n");
+
+        print!("🔑 Enter Dropbox App Key: ");
+        io::stdout().flush().map_err(|e| e.to_string())?;
+        let mut app_key = String::new();
+        io::stdin()
+            .read_line(&mut app_key)
+            .map_err(|e| e.to_string())?;
+        let app_key = app_key.trim();
+
+        print!("🔒 Enter Dropbox App Secret: ");
+        io::stdout().flush().map_err(|e| e.to_string())?;
+        let mut app_secret = String::new();
+        io::stdin()
+            .read_line(&mut app_secret)
+            .map_err(|e| e.to_string())?;
+        let app_secret = app_secret.trim();
+
+        if app_key.is_empty() || app_secret.is_empty() {
+            return Err("Both App Key and App Secret are required.".to_string());
+        }
+
+        let oauth_url = format!(
+            "https://www.dropbox.com/oauth2/authorize?client_id={}&response_type=code&token_access_type=offline",
+            app_key
+        );
+
+        println!("\n──────────────────────────────────────────────────────────────────────");
+        println!("📋 STEP 1: Open the authorization URL in your browser:\n");
+        println!("  👉 {}\n", oauth_url);
+        println!("📋 STEP 2: Sign in, approve app permissions, and copy the authorization code.");
+        println!("──────────────────────────────────────────────────────────────────────\n");
+
+        print!("📥 Paste Authorization Code here: ");
+        io::stdout().flush().map_err(|e| e.to_string())?;
+        let mut code = String::new();
+        io::stdin()
+            .read_line(&mut code)
+            .map_err(|e| e.to_string())?;
+        let code = code.trim();
+
+        if code.is_empty() {
+            return Err("Authorization code cannot be empty.".to_string());
+        }
+
+        println!("\n⏳ Exchanging authorization code for permanent refresh token...");
+
+        let client = reqwest::Client::new();
+        let resp = client
+            .post("https://api.dropbox.com/oauth2/token")
+            .basic_auth(app_key, Some(app_secret))
+            .form(&[("code", code), ("grant_type", "authorization_code")])
+            .send()
+            .await
+            .map_err(|e| format!("OAuth request failed: {}", e))?;
+
+        let status = resp.status();
+        let body = resp.text().await.unwrap_or_default();
+
+        if status.is_success() {
+            let data: serde_json::Value =
+                serde_json::from_str(&body).map_err(|e| format!("Invalid JSON response: {}", e))?;
+
+            if let Some(refresh_token) = data.get("refresh_token").and_then(|v| v.as_str()) {
+                println!(
+                    "\n┌────────────────────────────────────────────────────────────────────┐"
+                );
+                println!("│ ✅ AUTHORIZATION SUCCESSFUL!                                       │");
+                println!("├────────────────────────────────────────────────────────────────────┤");
+                println!("│ Add this value to your GitHub Repository Secrets:                  │");
+                println!("│ Secret Name: DROPBOX_REFRESH_TOKEN                                 │");
+                println!(
+                    "└────────────────────────────────────────────────────────────────────┘\n"
+                );
+                println!("DROPBOX_REFRESH_TOKEN:\n{}\n", refresh_token);
+                println!("──────────────────────────────────────────────────────────────────────");
+                Ok(refresh_token.to_string())
+            } else {
+                Err(format!("No refresh_token returned in response: {}", body))
+            }
+        } else {
+            Err(format!("Token exchange failed (HTTP {}): {}", status, body))
+        }
     }
 }

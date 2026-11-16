@@ -119,7 +119,13 @@ pub fn render_dashboard_text(state: &DashboardState) -> String {
          • 🔗 **IPA URL:** {}\n\
          • 🏷️ **App Name:** {}\n\
          • 🆔 **Bundle ID:** {}\n",
-        target.name, target.repo, target.workflow, target.desc, ipa_display, name_display, bundle_display
+        target.name,
+        target.repo,
+        target.workflow,
+        target.desc,
+        ipa_display,
+        name_display,
+        bundle_display
     );
 
     if target.has_extensions {
@@ -264,8 +270,14 @@ pub fn render_status_card(config: &AppConfig, account_name: &str) -> String {
         ipa_str,
         config.max_files_in_folder,
         deb_str,
-        config.max_files_in_deb_folder.unwrap_or(config.max_files_in_folder),
+        config
+            .max_files_in_deb_folder
+            .unwrap_or(config.max_files_in_folder),
         config.chunk_size_mb,
-        if config.privacy_mode { "Active (Masked)" } else { "Disabled" }
+        if config.privacy_mode {
+            "Active (Masked)"
+        } else {
+            "Disabled"
+        }
     )
 }

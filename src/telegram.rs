@@ -122,11 +122,13 @@ impl TelegramService {
             .map_err(|e| format!("getMe JSON parse error: {}", e))?;
 
         if let Some(user) = body.result {
-            let uname = user.username.unwrap_or_else(|| user.first_name);
+            let uname = user.username.unwrap_or(user.first_name);
             self.bot_username = uname.clone();
             Ok(uname)
         } else {
-            Err(body.description.unwrap_or_else(|| "getMe failed".to_string()))
+            Err(body
+                .description
+                .unwrap_or_else(|| "getMe failed".to_string()))
         }
     }
 
@@ -168,7 +170,9 @@ impl TelegramService {
         if let Some(msg) = body.result {
             Ok(msg.message_id)
         } else {
-            Err(body.description.unwrap_or_else(|| "Failed to send message".to_string()))
+            Err(body
+                .description
+                .unwrap_or_else(|| "Failed to send message".to_string()))
         }
     }
 
@@ -179,7 +183,10 @@ impl TelegramService {
         text: &str,
         reply_markup: Option<serde_json::Value>,
     ) -> Result<(), String> {
-        let url = format!("https://api.telegram.org/bot{}/editMessageText", self.bot_token);
+        let url = format!(
+            "https://api.telegram.org/bot{}/editMessageText",
+            self.bot_token
+        );
         let mut payload = serde_json::json!({
             "chat_id": chat_id,
             "message_id": message_id,
@@ -280,7 +287,11 @@ impl TelegramService {
         Ok(())
     }
 
-    pub async fn get_updates(&self, offset: i64, timeout_secs: u64) -> Result<Vec<TelegramUpdate>, String> {
+    pub async fn get_updates(
+        &self,
+        offset: i64,
+        timeout_secs: u64,
+    ) -> Result<Vec<TelegramUpdate>, String> {
         let url = format!("https://api.telegram.org/bot{}/getUpdates", self.bot_token);
         let payload = serde_json::json!({
             "offset": offset,
@@ -329,7 +340,9 @@ impl TelegramService {
             .await
             .map_err(|e| format!("getFile parse error: {}", e))?;
 
-        let file_info = body.result.ok_or_else(|| "Missing file result in getFile".to_string())?;
+        let file_info = body
+            .result
+            .ok_or_else(|| "Missing file result in getFile".to_string())?;
         let file_path = file_info
             .file_path
             .ok_or_else(|| "Missing file_path in getFile".to_string())?;
@@ -348,8 +361,8 @@ impl TelegramService {
 
         let total_bytes = dl_resp.content_length().unwrap_or(0);
         let mut downloaded: u64 = 0;
-        let mut file = File::create(dest_path)
-            .map_err(|e| format!("File creation failed: {}", e))?;
+        let mut file =
+            File::create(dest_path).map_err(|e| format!("File creation failed: {}", e))?;
 
         let mut stream = dl_resp.bytes_stream();
         while let Some(chunk_res) = stream.next().await {

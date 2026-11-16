@@ -73,7 +73,11 @@ impl AppConfig {
         if !norm.starts_with('/') {
             norm = format!("/{}", norm);
         }
-        let mut deb_norm = self.dropbox_deb_folder.trim().trim_end_matches('/').to_string();
+        let mut deb_norm = self
+            .dropbox_deb_folder
+            .trim()
+            .trim_end_matches('/')
+            .to_string();
         if !deb_norm.starts_with('/') {
             deb_norm = format!("/{}", deb_norm);
         }
@@ -90,9 +94,18 @@ impl AppConfig {
 pub fn load_config() -> Result<AppConfig, String> {
     dotenvy::dotenv().ok();
 
-    let bot_token = env::var("TELEGRAM_BOT_TOKEN").unwrap_or_default().trim().to_string();
-    let api_id_raw = env::var("TELEGRAM_API_ID").unwrap_or_default().trim().to_string();
-    let api_hash = env::var("TELEGRAM_API_HASH").unwrap_or_default().trim().to_string();
+    let bot_token = env::var("TELEGRAM_BOT_TOKEN")
+        .unwrap_or_default()
+        .trim()
+        .to_string();
+    let api_id_raw = env::var("TELEGRAM_API_ID")
+        .unwrap_or_default()
+        .trim()
+        .to_string();
+    let api_hash = env::var("TELEGRAM_API_HASH")
+        .unwrap_or_default()
+        .trim()
+        .to_string();
 
     let api_id = api_id_raw.parse::<i64>().unwrap_or(0);
 
@@ -177,7 +190,10 @@ pub fn load_config() -> Result<AppConfig, String> {
         .to_lowercase();
     let privacy_mode = privacy_raw == "true" || privacy_raw == "1" || privacy_raw == "yes";
 
-    let log_level = env::var("LOG_LEVEL").unwrap_or_else(|_| "INFO".to_string()).trim().to_string();
+    let log_level = env::var("LOG_LEVEL")
+        .unwrap_or_else(|_| "INFO".to_string())
+        .trim()
+        .to_string();
 
     let download_url = env::var("DOWNLOAD_URL")
         .ok()
@@ -188,7 +204,8 @@ pub fn load_config() -> Result<AppConfig, String> {
         .unwrap_or_else(|_| "false".to_string())
         .trim()
         .to_lowercase();
-    let is_artifact = is_artifact_raw == "true" || is_artifact_raw == "1" || is_artifact_raw == "yes";
+    let is_artifact =
+        is_artifact_raw == "true" || is_artifact_raw == "1" || is_artifact_raw == "yes";
 
     let artifact_id = env::var("ARTIFACT_ID")
         .ok()
@@ -227,10 +244,22 @@ pub fn load_config() -> Result<AppConfig, String> {
         .map(|v| v.trim().to_lowercase() == "true")
         .unwrap_or(false);
 
-    let dbx_app_key = env::var("DROPBOX_APP_KEY").ok().map(|v| v.trim().to_string()).filter(|s| !s.is_empty());
-    let dbx_app_secret = env::var("DROPBOX_APP_SECRET").ok().map(|v| v.trim().to_string()).filter(|s| !s.is_empty());
-    let dbx_refresh_token = env::var("DROPBOX_REFRESH_TOKEN").ok().map(|v| v.trim().to_string()).filter(|s| !s.is_empty());
-    let dbx_access_token = env::var("DROPBOX_ACCESS_TOKEN").ok().map(|v| v.trim().to_string()).filter(|s| !s.is_empty());
+    let dbx_app_key = env::var("DROPBOX_APP_KEY")
+        .ok()
+        .map(|v| v.trim().to_string())
+        .filter(|s| !s.is_empty());
+    let dbx_app_secret = env::var("DROPBOX_APP_SECRET")
+        .ok()
+        .map(|v| v.trim().to_string())
+        .filter(|s| !s.is_empty());
+    let dbx_refresh_token = env::var("DROPBOX_REFRESH_TOKEN")
+        .ok()
+        .map(|v| v.trim().to_string())
+        .filter(|s| !s.is_empty());
+    let dbx_access_token = env::var("DROPBOX_ACCESS_TOKEN")
+        .ok()
+        .map(|v| v.trim().to_string())
+        .filter(|s| !s.is_empty());
 
     Ok(AppConfig {
         telegram_bot_token: bot_token,
@@ -266,4 +295,3 @@ pub fn load_config() -> Result<AppConfig, String> {
         file_size,
     })
 }
-

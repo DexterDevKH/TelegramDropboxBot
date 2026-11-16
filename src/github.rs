@@ -87,7 +87,10 @@ impl GitHubService {
 
     fn get_headers(&self) -> HeaderMap {
         let mut headers = HeaderMap::new();
-        headers.insert(ACCEPT, HeaderValue::from_static("application/vnd.github+json"));
+        headers.insert(
+            ACCEPT,
+            HeaderValue::from_static("application/vnd.github+json"),
+        );
         headers.insert(
             HeaderName::from_static("x-github-api-version"),
             HeaderValue::from_static("2022-11-28"),
@@ -111,7 +114,10 @@ impl GitHubService {
         inputs: serde_json::Value,
     ) -> Result<(), String> {
         if self.pat.is_empty() {
-            return Err("Missing GH_PAT secret. Configure GH_PAT in GitHub Secrets or environment.".to_string());
+            return Err(
+                "Missing GH_PAT secret. Configure GH_PAT in GitHub Secrets or environment."
+                    .to_string(),
+            );
         }
 
         let url = format!(
@@ -142,7 +148,10 @@ impl GitHubService {
     }
 
     pub async fn get_latest_workflow_run(&self, repo: &str) -> Option<GitHubWorkflowRun> {
-        let url = format!("https://api.github.com/repos/{}/actions/runs?per_page=1", repo);
+        let url = format!(
+            "https://api.github.com/repos/{}/actions/runs?per_page=1",
+            repo
+        );
         let resp = self
             .client
             .get(&url)
@@ -158,8 +167,15 @@ impl GitHubService {
         None
     }
 
-    pub async fn get_workflow_run_details(&self, repo: &str, run_id: i64) -> Option<GitHubWorkflowRun> {
-        let url = format!("https://api.github.com/repos/{}/actions/runs/{}", repo, run_id);
+    pub async fn get_workflow_run_details(
+        &self,
+        repo: &str,
+        run_id: i64,
+    ) -> Option<GitHubWorkflowRun> {
+        let url = format!(
+            "https://api.github.com/repos/{}/actions/runs/{}",
+            repo, run_id
+        );
         let resp = self
             .client
             .get(&url)
@@ -174,8 +190,15 @@ impl GitHubService {
         None
     }
 
-    pub async fn get_artifact_metadata(&self, repo: &str, artifact_id: &str) -> Option<GitHubArtifact> {
-        let url = format!("https://api.github.com/repos/{}/actions/artifacts/{}", repo, artifact_id);
+    pub async fn get_artifact_metadata(
+        &self,
+        repo: &str,
+        artifact_id: &str,
+    ) -> Option<GitHubArtifact> {
+        let url = format!(
+            "https://api.github.com/repos/{}/actions/artifacts/{}",
+            repo, artifact_id
+        );
         let resp = self
             .client
             .get(&url)
@@ -191,8 +214,17 @@ impl GitHubService {
     }
 
     pub async fn get_run_artifacts(&self, repo: &str, run_id: i64) -> Vec<GitHubArtifact> {
-        let url = format!("https://api.github.com/repos/{}/actions/runs/{}/artifacts", repo, run_id);
-        if let Ok(resp) = self.client.get(&url).headers(self.get_headers()).send().await {
+        let url = format!(
+            "https://api.github.com/repos/{}/actions/runs/{}/artifacts",
+            repo, run_id
+        );
+        if let Ok(resp) = self
+            .client
+            .get(&url)
+            .headers(self.get_headers())
+            .send()
+            .await
+        {
             if resp.status().is_success() {
                 if let Ok(data) = resp.json::<GitHubArtifactsResponse>().await {
                     return data.artifacts;
@@ -214,7 +246,9 @@ impl GitHubService {
         F: FnMut(u64, u64),
     {
         if self.pat.is_empty() {
-            return Err("Missing GH_PAT. GitHub Actions artifacts require authentication.".to_string());
+            return Err(
+                "Missing GH_PAT. GitHub Actions artifacts require authentication.".to_string(),
+            );
         }
 
         let api_url = format!(
@@ -234,7 +268,10 @@ impl GitHubService {
         if !resp.status().is_success() {
             let status = resp.status();
             let err_txt = resp.text().await.unwrap_or_default();
-            return Err(format!("GitHub artifact download error ({}): {}", status, err_txt));
+            return Err(format!(
+                "GitHub artifact download error ({}): {}",
+                status, err_txt
+            ));
         }
 
         let total_bytes = resp.content_length().unwrap_or(0);
@@ -287,13 +324,15 @@ impl GitHubService {
             }
         }
         if detected_name.is_none() {
-            detected_name = Some(extract_filename_from_url(resp.url().as_str(), "downloaded_file.bin"));
+            detected_name = Some(extract_filename_from_url(
+                resp.url().as_str(),
+                "downloaded_file.bin",
+            ));
         }
 
         let total_bytes = resp.content_length().unwrap_or(0);
         let mut downloaded: u64 = 0;
-        let mut file = File::create(dest_path)
-            .map_err(|e| format!("File create error: {}", e))?;
+        let mut file = File::create(dest_path).map_err(|e| format!("File create error: {}", e))?;
 
         let mut stream = resp.bytes_stream();
         while let Some(chunk_res) = stream.next().await {
@@ -312,7 +351,10 @@ impl GitHubService {
         if self.pat.is_empty() {
             return Err("Missing GH_PAT secret.".to_string());
         }
-        let url = format!("https://api.github.com/repos/{}/actions/secrets/public-key", repo);
+        let url = format!(
+            "https://api.github.com/repos/{}/actions/secrets/public-key",
+            repo
+        );
         let resp = self
             .client
             .get(&url)
@@ -333,13 +375,19 @@ impl GitHubService {
     }
 
     /// Encrypts secret string using Libsodium SealedBox (crypto_box sealed box).
-    pub fn encrypt_secret_value(public_key_b64: &str, secret_value: &str) -> Result<String, String> {
+    pub fn encrypt_secret_value(
+        public_key_b64: &str,
+        secret_value: &str,
+    ) -> Result<String, String> {
         let pk_bytes = BASE64_STANDARD
             .decode(public_key_b64.trim())
             .map_err(|e| format!("Base64 decode public key error: {}", e))?;
 
         if pk_bytes.len() != 32 {
-            return Err(format!("Invalid public key length: expected 32 bytes, got {}", pk_bytes.len()));
+            return Err(format!(
+                "Invalid public key length: expected 32 bytes, got {}",
+                pk_bytes.len()
+            ));
         }
 
         let mut key_array = [0u8; 32];
@@ -385,12 +433,17 @@ impl GitHubService {
 
         let status = resp.status();
         if status.as_u16() == 201 || status.as_u16() == 204 {
-            info!("Successfully updated secret '{}' in repo '{}'", secret_name, repo);
+            info!(
+                "Successfully updated secret '{}' in repo '{}'",
+                secret_name, repo
+            );
             Ok("Secret updated successfully.".to_string())
         } else {
             let err_txt = resp.text().await.unwrap_or_default();
-            Err(format!("GitHub secret update error ({}): {}", status, err_txt))
+            Err(format!(
+                "GitHub secret update error ({}): {}",
+                status, err_txt
+            ))
         }
     }
 }
-

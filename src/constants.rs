@@ -76,32 +76,124 @@ pub static TARGET_DTMUSIC: BuildTarget = BuildTarget {
 pub static BUILD_TARGETS: &[&BuildTarget] = &[&TARGET_DTKACE, &TARGET_DTLITE, &TARGET_DTMUSIC];
 
 pub static DTKACE_EXTENSIONS: &[ExtensionConfig] = &[
-    ExtensionConfig { key: "ytabc", input: "enable_ytabc", name: "YTABConfig" },
-    ExtensionConfig { key: "ytweaks", input: "enable_ytweaks", name: "YTweaks" },
-    ExtensionConfig { key: "youpip", input: "enable_youpip", name: "YouPiP" },
-    ExtensionConfig { key: "vbyt", input: "enable_vbyt", name: "VolumeBoost" },
-    ExtensionConfig { key: "demc", input: "enable_demc", name: "DontEatMyContent" },
-    ExtensionConfig { key: "ryd", input: "enable_ryd", name: "Dislikes (RYD)" },
-    ExtensionConfig { key: "ytvo", input: "enable_ytvo", name: "VideoOverlay" },
-    ExtensionConfig { key: "ygc", input: "enable_ygc", name: "YouGetCaption" },
-    ExtensionConfig { key: "yq", input: "enable_yq", name: "YouQuality" },
-    ExtensionConfig { key: "ycq", input: "enable_ycq", name: "ChooseQuality" },
-    ExtensionConfig { key: "ythfs", input: "enable_ythfs", name: "HoldForSpeed" },
-    ExtensionConfig { key: "ygs", input: "enable_ygs", name: "GroupSettings" },
-    ExtensionConfig { key: "ytuhd", input: "enable_ytuhd", name: "YTUHD (4K/VP9)" },
+    ExtensionConfig {
+        key: "ytabc",
+        input: "enable_ytabc",
+        name: "YTABConfig",
+    },
+    ExtensionConfig {
+        key: "ytweaks",
+        input: "enable_ytweaks",
+        name: "YTweaks",
+    },
+    ExtensionConfig {
+        key: "youpip",
+        input: "enable_youpip",
+        name: "YouPiP",
+    },
+    ExtensionConfig {
+        key: "vbyt",
+        input: "enable_vbyt",
+        name: "VolumeBoost",
+    },
+    ExtensionConfig {
+        key: "demc",
+        input: "enable_demc",
+        name: "DontEatMyContent",
+    },
+    ExtensionConfig {
+        key: "ryd",
+        input: "enable_ryd",
+        name: "Dislikes (RYD)",
+    },
+    ExtensionConfig {
+        key: "ytvo",
+        input: "enable_ytvo",
+        name: "VideoOverlay",
+    },
+    ExtensionConfig {
+        key: "ygc",
+        input: "enable_ygc",
+        name: "YouGetCaption",
+    },
+    ExtensionConfig {
+        key: "yq",
+        input: "enable_yq",
+        name: "YouQuality",
+    },
+    ExtensionConfig {
+        key: "ycq",
+        input: "enable_ycq",
+        name: "ChooseQuality",
+    },
+    ExtensionConfig {
+        key: "ythfs",
+        input: "enable_ythfs",
+        name: "HoldForSpeed",
+    },
+    ExtensionConfig {
+        key: "ygs",
+        input: "enable_ygs",
+        name: "GroupSettings",
+    },
+    ExtensionConfig {
+        key: "ytuhd",
+        input: "enable_ytuhd",
+        name: "YTUHD (4K/VP9)",
+    },
 ];
 
 pub static DTLITE_EXTENSIONS: &[ExtensionConfig] = &[
-    ExtensionConfig { key: "youpip", input: "enable_youpip", name: "YouPiP" },
-    ExtensionConfig { key: "ytuhd", input: "enable_ytuhd", name: "YTUHD (4K/VP9)" },
-    ExtensionConfig { key: "yq", input: "enable_yq", name: "YouQuality" },
-    ExtensionConfig { key: "ryd", input: "enable_ryd", name: "Dislikes (RYD)" },
-    ExtensionConfig { key: "ytabc", input: "enable_ytabc", name: "YTABConfig" },
-    ExtensionConfig { key: "demc", input: "enable_demc", name: "DontEatMyContent" },
-    ExtensionConfig { key: "ycq", input: "enable_ycq", name: "ChooseQuality" },
-    ExtensionConfig { key: "vbyt", input: "enable_vbyt", name: "VolumeBoost" },
-    ExtensionConfig { key: "ytamp", input: "enable_ytamp", name: "Miniplayer" },
-    ExtensionConfig { key: "loc", input: "enable_localization", name: "Localization" },
+    ExtensionConfig {
+        key: "youpip",
+        input: "enable_youpip",
+        name: "YouPiP",
+    },
+    ExtensionConfig {
+        key: "ytuhd",
+        input: "enable_ytuhd",
+        name: "YTUHD (4K/VP9)",
+    },
+    ExtensionConfig {
+        key: "yq",
+        input: "enable_yq",
+        name: "YouQuality",
+    },
+    ExtensionConfig {
+        key: "ryd",
+        input: "enable_ryd",
+        name: "Dislikes (RYD)",
+    },
+    ExtensionConfig {
+        key: "ytabc",
+        input: "enable_ytabc",
+        name: "YTABConfig",
+    },
+    ExtensionConfig {
+        key: "demc",
+        input: "enable_demc",
+        name: "DontEatMyContent",
+    },
+    ExtensionConfig {
+        key: "ycq",
+        input: "enable_ycq",
+        name: "ChooseQuality",
+    },
+    ExtensionConfig {
+        key: "vbyt",
+        input: "enable_vbyt",
+        name: "VolumeBoost",
+    },
+    ExtensionConfig {
+        key: "ytamp",
+        input: "enable_ytamp",
+        name: "Miniplayer",
+    },
+    ExtensionConfig {
+        key: "loc",
+        input: "enable_localization",
+        name: "Localization",
+    },
 ];
 
 pub fn get_target(key: &str) -> Option<&'static BuildTarget> {

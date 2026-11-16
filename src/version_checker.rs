@@ -95,7 +95,10 @@ pub async fn fetch_ios_app_info(bundle_id: &str) -> Option<IosAppInfo> {
         .build()
         .ok()?;
 
-    let url = format!("https://itunes.apple.com/lookup?bundleId={}", bundle_id.trim());
+    let url = format!(
+        "https://itunes.apple.com/lookup?bundleId={}",
+        bundle_id.trim()
+    );
     let resp = client
         .get(&url)
         .header(
@@ -124,12 +127,17 @@ pub async fn fetch_ios_app_info(bundle_id: &str) -> Option<IosAppInfo> {
 
     Some(IosAppInfo {
         app_key: meta.map(|m| m.key).unwrap_or("app").to_string(),
-        app_name: r.track_name.clone().unwrap_or_else(|| meta.map(|m| m.name).unwrap_or("iOS App").to_string()),
+        app_name: r
+            .track_name
+            .clone()
+            .unwrap_or_else(|| meta.map(|m| m.name).unwrap_or("iOS App").to_string()),
         bundle_id: r.bundle_id.unwrap_or_else(|| bundle_id.to_string()),
         version: r.version.unwrap_or_default(),
         release_date,
         release_date_full: release_date_raw,
-        release_notes: r.release_notes.unwrap_or_else(|| "Bug fixes and performance improvements.".to_string()),
+        release_notes: r
+            .release_notes
+            .unwrap_or_else(|| "Bug fixes and performance improvements.".to_string()),
         track_view_url: r.track_view_url.unwrap_or_default(),
         artwork_url: r.artwork_url100.unwrap_or_default(),
         min_os: r.minimum_os_version.unwrap_or_default(),
@@ -200,7 +208,10 @@ pub async fn check_all_ios_versions(
                         },
                     );
                     cache_updated = true;
-                    info!("Initialized iOS version tracking for {}: {}", app.name, current_ver);
+                    info!(
+                        "Initialized iOS version tracking for {}: {}",
+                        app.name, current_ver
+                    );
                 }
                 Some(ref pv) if pv != &current_ver => {
                     // New version detected!
@@ -339,4 +350,3 @@ pub async fn send_telegram_alert(
 
     Ok(any_success)
 }
-

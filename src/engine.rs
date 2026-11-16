@@ -13,9 +13,9 @@ use crate::config::AppConfig;
 use crate::constants::{get_target, TARGET_DTKACE};
 use crate::dropbox::DropboxService;
 use crate::formatters::{
-    extract_single_file_from_zip, format_eta, format_size, match_app_bundle,
-    parse_artifact_url, parse_run_url, render_progress_bar, resolve_dropbox_destination,
-    sanitize_filename, SpeedTracker,
+    extract_single_file_from_zip, format_eta, format_size, match_app_bundle, parse_artifact_url,
+    parse_run_url, render_progress_bar, resolve_dropbox_destination, sanitize_filename,
+    SpeedTracker,
 };
 use crate::github::GitHubService;
 use crate::privacy::{mask_filename, mask_user_id};
@@ -82,7 +82,11 @@ impl ProgressReporter {
             self.title,
             self.file_name,
             format_size(current),
-            if total > 0 { format_size(total) } else { "Unknown".to_string() },
+            if total > 0 {
+                format_size(total)
+            } else {
+                "Unknown".to_string()
+            },
             format_size(speed as u64),
             format_eta(eta),
             render_progress_bar(pct, 12)
@@ -93,9 +97,25 @@ impl ProgressReporter {
         let status_msg_id = self.status_msg_id;
         tokio::spawn(async move {
             let tg_client = TelegramService::new(token);
-            let _ = tg_client.edit_message_text(chat_id, status_msg_id, &card, None).await;
+            let _ = tg_client
+                .edit_message_text(chat_id, status_msg_id, &card, None)
+                .await;
         });
     }
+}
+
+/// Request parameters for on-demand or background URL payload ingestion.
+#[derive(Debug, Clone, Default)]
+pub struct ProcessPayloadRequest<'a> {
+    pub raw_url: &'a str,
+    pub chat_id: i64,
+    pub message_id: i64,
+    pub dispatch_msg_id: Option<i64>,
+    pub is_artifact: bool,
+    pub artifact_id: Option<&'a str>,
+    pub artifact_repo: Option<&'a str>,
+    pub file_name_override: Option<&'a str>,
+    pub file_size_override: u64,
 }
 
 pub struct SyncApp {
@@ -179,17 +199,17 @@ impl SyncApp {
         info!("└────────────────────────────────────────────────────────────────────┘");
 
         if let Some(ref raw_url) = self.config.download_url {
-            self.process_url_payload(
+            self.process_url_payload(ProcessPayloadRequest {
                 raw_url,
                 chat_id,
                 message_id,
                 dispatch_msg_id,
-                self.config.is_artifact,
-                self.config.artifact_id.as_deref(),
-                self.config.artifact_repo.as_deref(),
-                self.config.file_name.as_deref(),
-                self.config.file_size,
-            )
+                is_artifact: self.config.is_artifact,
+                artifact_id: self.config.artifact_id.as_deref(),
+                artifact_repo: self.config.artifact_repo.as_deref(),
+                file_name_override: self.config.file_name.as_deref(),
+                file_size_override: self.config.file_size,
+            })
             .await?;
         } else {
             warn!("On-demand invoked without direct URL payload. Awaiting URL or file.");
@@ -198,21 +218,17 @@ impl SyncApp {
         Ok(())
     }
 
-    pub async fn process_url_payload(
-        &self,
-        raw_url: &str,
-        chat_id: i64,
-        message_id: i64,
-        dispatch_msg_id: Option<i64>,
-        mut is_artifact: bool,
-        artifact_id: Option<&str>,
-        artifact_repo: Option<&str>,
-        file_name_override: Option<&str>,
-        file_size_override: u64,
-    ) -> Result<(), String> {
+    pub async fn process_url_payload(&self, req: ProcessPayloadRequest<'_>) -> Result<(), String> {
         self.touch_activity();
 
-        let status_msg_id = if let Some(disp_id) = dispatch_msg_id {
+        let chat_id = req.chat_id;
+        let message_id = req.message_id;
+        let raw_url = req.raw_url;
+        let mut is_artifact = req.is_artifact;
+        let file_name_override = req.file_name_override;
+        let file_size_override = req.file_size_override;
+
+        let status_msg_id = if let Some(disp_id) = req.dispatch_msg_id {
             disp_id
         } else {
             let initial_card = "⏳ **INITIALIZING ENGINE**\n──────────────────────────────\n⚡ Connecting to cloud pipelines...";
@@ -222,8 +238,8 @@ impl SyncApp {
                 .map_err(|e| format!("Failed to create status notice: {}", e))?
         };
 
-        let mut final_artifact_id = artifact_id.map(|s| s.to_string());
-        let mut final_artifact_repo = artifact_repo.map(|s| s.to_string());
+        let mut final_artifact_id = req.artifact_id.map(|s| s.to_string());
+        let mut final_artifact_repo = req.artifact_repo.map(|s| s.to_string());
 
         // Pattern matching: GitHub Artifact or Run URL
         if !is_artifact {
@@ -233,7 +249,10 @@ impl SyncApp {
                 final_artifact_id = Some(art_info.artifact_id);
             } else if let Some(run_info) = parse_run_url(raw_url) {
                 if let Ok(run_id) = run_info.run_id.parse::<i64>() {
-                    let artifacts = self.gh.get_run_artifacts(&run_info.repo_full_name, run_id).await;
+                    let artifacts = self
+                        .gh
+                        .get_run_artifacts(&run_info.repo_full_name, run_id)
+                        .await;
                     if let Some(first_art) = artifacts.first() {
                         is_artifact = true;
                         final_artifact_repo = Some(run_info.repo_full_name);
@@ -243,7 +262,9 @@ impl SyncApp {
             }
         }
 
-        let mut initial_name = file_name_override.unwrap_or("downloaded_file.bin").to_string();
+        let mut initial_name = file_name_override
+            .unwrap_or("downloaded_file.bin")
+            .to_string();
         let mut known_size = file_size_override;
 
         if is_artifact {
@@ -261,7 +282,10 @@ impl SyncApp {
                             repo,
                             meta.expires_at.unwrap_or_else(|| "Unknown".to_string())
                         );
-                        let _ = self.tg.edit_message_text(chat_id, status_msg_id, &expired_card, None).await;
+                        let _ = self
+                            .tg
+                            .edit_message_text(chat_id, status_msg_id, &expired_card, None)
+                            .await;
                         return Ok(());
                     }
                     if file_name_override.is_none() {
@@ -287,18 +311,29 @@ impl SyncApp {
              📄 **Target:** `{}`\n\
              📦 **Filesize:** `{}`\n\
              ⚡ **Status:** Connecting to remote server...",
-            if is_artifact { "GitHub Actions Artifact" } else { raw_url },
+            if is_artifact {
+                "GitHub Actions Artifact"
+            } else {
+                raw_url
+            },
             initial_name,
             formatted_size
         );
-        let _ = self.tg.edit_message_text(chat_id, status_msg_id, &init_card, None).await;
+        let _ = self
+            .tg
+            .edit_message_text(chat_id, status_msg_id, &init_card, None)
+            .await;
 
         let tmp_dir = std::env::temp_dir();
         let now_ts = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap_or_default()
             .as_millis();
-        let mut download_target = tmp_dir.join(format!("dl_{}_{}", now_ts, sanitize_filename(&initial_name)));
+        let mut download_target = tmp_dir.join(format!(
+            "dl_{}_{}",
+            now_ts,
+            sanitize_filename(&initial_name)
+        ));
         let mut cleanup_paths = vec![download_target.clone()];
 
         let dl_start = Instant::now();
@@ -321,7 +356,11 @@ impl SyncApp {
         let mut extracted_from_zip = false;
 
         if is_artifact {
-            if !download_target.to_string_lossy().to_lowercase().ends_with(".zip") {
+            if !download_target
+                .to_string_lossy()
+                .to_lowercase()
+                .ends_with(".zip")
+            {
                 download_target.set_extension("zip");
                 cleanup_paths.push(download_target.clone());
             }
@@ -345,9 +384,15 @@ impl SyncApp {
                 cleanup_paths.push(final_file_path.clone());
                 cleanup_paths.push(unzip_res.extract_dest_dir);
                 extracted_from_zip = true;
-                info!("Unzipped artifact archive: extracted '{}' ({})", final_filename, format_size(unzip_res.file_size));
+                info!(
+                    "Unzipped artifact archive: extracted '{}' ({})",
+                    final_filename,
+                    format_size(unzip_res.file_size)
+                );
             } else {
-                return Err("Failed to unzip artifact: archive contains no valid files.".to_string());
+                return Err(
+                    "Failed to unzip artifact: archive contains no valid files.".to_string()
+                );
             }
         } else {
             let (detected_name, _downloaded_bytes) = self
@@ -362,7 +407,11 @@ impl SyncApp {
             }
 
             if final_filename.to_lowercase().ends_with(".zip")
-                || (!final_filename.to_lowercase().ends_with(".ipa") && zip::ZipArchive::new(File::open(&download_target).map_err(|e| e.to_string())?).is_ok())
+                || (!final_filename.to_lowercase().ends_with(".ipa")
+                    && zip::ZipArchive::new(
+                        File::open(&download_target).map_err(|e| e.to_string())?,
+                    )
+                    .is_ok())
             {
                 if let Some(unzip_res) = extract_single_file_from_zip(&download_target, &tmp_dir) {
                     final_file_path = unzip_res.final_file_path.clone();
@@ -370,7 +419,11 @@ impl SyncApp {
                     cleanup_paths.push(final_file_path.clone());
                     cleanup_paths.push(unzip_res.extract_dest_dir);
                     extracted_from_zip = true;
-                    info!("Unzipped URL payload: extracted '{}' ({})", final_filename, format_size(unzip_res.file_size));
+                    info!(
+                        "Unzipped URL payload: extracted '{}' ({})",
+                        final_filename,
+                        format_size(unzip_res.file_size)
+                    );
                 }
             }
         }
@@ -390,7 +443,10 @@ impl SyncApp {
              ⚡ **Status:** Initializing cloud transfer...",
             final_filename, formatted_total_size, dl_duration
         );
-        let _ = self.tg.edit_message_text(chat_id, status_msg_id, &ul_prep_card, None).await;
+        let _ = self
+            .tg
+            .edit_message_text(chat_id, status_msg_id, &ul_prep_card, None)
+            .await;
 
         // Phase 2: Dropbox Chunked Upload & Retention Auto-Rotation
         let (dest_path, retention_folder, vault_display) = resolve_dropbox_destination(
@@ -441,7 +497,8 @@ impl SyncApp {
                 final_artifact_repo.as_deref().unwrap_or("Actions")
             ));
             if extracted_from_zip {
-                completion_card.push_str("📦 *Extracted single binary from artifact zip archive.*\n");
+                completion_card
+                    .push_str("📦 *Extracted single binary from artifact zip archive.*\n");
             }
             completion_card.push('\n');
         } else {
@@ -513,7 +570,10 @@ impl SyncApp {
         }
 
         let log_file = mask_filename(&final_filename, self.config.privacy_mode);
-        info!("URL sync complete: '{}' ({}) in {:.1}s", log_file, formatted_total_size, total_duration);
+        info!(
+            "URL sync complete: '{}' ({}) in {:.1}s",
+            log_file, formatted_total_size, total_duration
+        );
 
         Ok(())
     }
@@ -565,22 +625,26 @@ impl SyncApp {
                                  ⚡ *Fetching compiled IPA artifact for automatic Dropbox archiving...*",
                                 target.name, rid
                             );
-                            let _ = self.tg.edit_message_text(chat_id, message_id, &success_card, None).await;
+                            let _ = self
+                                .tg
+                                .edit_message_text(chat_id, message_id, &success_card, None)
+                                .await;
 
                             let artifacts = self.gh.get_run_artifacts(target.repo, rid).await;
                             if let Some(art) = artifacts.first() {
                                 let _ = self.dbx.initialize().await;
-                                self.process_url_payload(
-                                    "",
+                                let art_id_str = art.id.to_string();
+                                self.process_url_payload(ProcessPayloadRequest {
+                                    raw_url: "",
                                     chat_id,
                                     message_id,
-                                    Some(message_id),
-                                    true,
-                                    Some(&art.id.to_string()),
-                                    Some(target.repo),
-                                    Some(&art.name),
-                                    art.size_in_bytes,
-                                )
+                                    dispatch_msg_id: Some(message_id),
+                                    is_artifact: true,
+                                    artifact_id: Some(&art_id_str),
+                                    artifact_repo: Some(target.repo),
+                                    file_name_override: Some(&art.name),
+                                    file_size_override: art.size_in_bytes,
+                                })
                                 .await?;
                             }
                         } else {
@@ -594,7 +658,10 @@ impl SyncApp {
                                  💡 *Check repository Actions logs for compilation failure details.*",
                                 target.name, rid, conclusion.unwrap_or_else(|| "failed".to_string())
                             );
-                            let _ = self.tg.edit_message_text(chat_id, message_id, &fail_card, None).await;
+                            let _ = self
+                                .tg
+                                .edit_message_text(chat_id, message_id, &fail_card, None)
+                                .await;
                         }
                         return Ok(());
                     } else {
@@ -606,9 +673,16 @@ impl SyncApp {
                              ⚡ **Status:** `{}` (Check {}/{})\n\
                              ──────────────────────────────\n\
                              ☕ *Compilation running on GitHub Actions cloud runners...*",
-                            target.name, rid, status, check_idx + 1, max_checks
+                            target.name,
+                            rid,
+                            status,
+                            check_idx + 1,
+                            max_checks
                         );
-                        let _ = self.tg.edit_message_text(chat_id, message_id, &tracking_card, None).await;
+                        let _ = self
+                            .tg
+                            .edit_message_text(chat_id, message_id, &tracking_card, None)
+                            .await;
                     }
                 }
             }
@@ -685,7 +759,10 @@ impl SyncApp {
         let user_id = msg.from.as_ref().map(|u| u.id).unwrap_or(0);
 
         if !self.config.is_authorized(user_id) {
-            warn!("Unauthorized message attempt from user_id: {}", mask_user_id(user_id, self.config.privacy_mode));
+            warn!(
+                "Unauthorized message attempt from user_id: {}",
+                mask_user_id(user_id, self.config.privacy_mode)
+            );
             return;
         }
 
@@ -701,10 +778,16 @@ impl SyncApp {
                 • `/status` - Check cloud vaults & iOS App Store versions\n\
                 ──────────────────────────────\n\
                 💡 *You can also paste any direct file URL to instantly download and push to Dropbox.*";
-            let _ = self.tg.send_message(chat_id, welcome, Some(msg.message_id), None).await;
+            let _ = self
+                .tg
+                .send_message(chat_id, welcome, Some(msg.message_id), None)
+                .await;
         } else if text == "/build" {
             let (menu_text, buttons) = render_main_menu();
-            let _ = self.tg.send_message(chat_id, &menu_text, Some(msg.message_id), Some(buttons)).await;
+            let _ = self
+                .tg
+                .send_message(chat_id, &menu_text, Some(msg.message_id), Some(buttons))
+                .await;
         } else if text.starts_with("/settweak") {
             let parts: Vec<&str> = text.split_whitespace().collect();
             if parts.len() >= 3 {
@@ -714,15 +797,33 @@ impl SyncApp {
                     "dtkace" => "DexterDevKH/DTKACE",
                     "dtlite" => "DexterDevKH/DTLite",
                     _ => {
-                        let _ = self.tg.send_message(chat_id, "⚠️ Invalid target. Choose `dtkace` or `dtlite`.", Some(msg.message_id), None).await;
+                        let _ = self
+                            .tg
+                            .send_message(
+                                chat_id,
+                                "⚠️ Invalid target. Choose `dtkace` or `dtlite`.",
+                                Some(msg.message_id),
+                                None,
+                            )
+                            .await;
                         return;
                     }
                 };
 
-                let notice = format!("⏳ Encrypting & updating `TWEAK_URL` for `{}`...", target_key);
-                let _ = self.tg.send_message(chat_id, &notice, Some(msg.message_id), None).await;
+                let notice = format!(
+                    "⏳ Encrypting & updating `TWEAK_URL` for `{}`...",
+                    target_key
+                );
+                let _ = self
+                    .tg
+                    .send_message(chat_id, &notice, Some(msg.message_id), None)
+                    .await;
 
-                match self.gh.update_repository_secret(repo, "TWEAK_URL", tweak_url).await {
+                match self
+                    .gh
+                    .update_repository_secret(repo, "TWEAK_URL", tweak_url)
+                    .await
+                {
                     Ok(_) => {
                         let succ = format!(
                             "✅ **SECRET UPDATED SUCCESSFULLY**\n\
@@ -734,34 +835,46 @@ impl SyncApp {
                              💡 *Subsequent workflow runs will now compile with this tweak.*",
                             repo, tweak_url
                         );
-                        let _ = self.tg.send_message(chat_id, &succ, Some(msg.message_id), None).await;
+                        let _ = self
+                            .tg
+                            .send_message(chat_id, &succ, Some(msg.message_id), None)
+                            .await;
                     }
                     Err(err) => {
-                        let err_card = format!("❌ **SECRET UPDATE FAILED**\n──────────────────────────────\n⚠️ {}", err);
-                        let _ = self.tg.send_message(chat_id, &err_card, Some(msg.message_id), None).await;
+                        let err_card = format!(
+                            "❌ **SECRET UPDATE FAILED**\n──────────────────────────────\n⚠️ {}",
+                            err
+                        );
+                        let _ = self
+                            .tg
+                            .send_message(chat_id, &err_card, Some(msg.message_id), None)
+                            .await;
                     }
                 }
             } else {
                 let usage = "ℹ️ **Usage:** `/settweak <dtkace|dtlite> <DIRECT_TWEAK_DEB_URL>`\n\n\
                     Example:\n\
                     `/settweak dtkace https://github.com/user/repo/releases/download/v1.0/tweak.deb`";
-                let _ = self.tg.send_message(chat_id, usage, Some(msg.message_id), None).await;
+                let _ = self
+                    .tg
+                    .send_message(chat_id, usage, Some(msg.message_id), None)
+                    .await;
             }
         } else if text == "/status" {
             let status_text = render_status_card(&self.config, &self.dbx.account_name);
-            let _ = self.tg.send_message(chat_id, &status_text, Some(msg.message_id), None).await;
+            let _ = self
+                .tg
+                .send_message(chat_id, &status_text, Some(msg.message_id), None)
+                .await;
         } else if text.starts_with("http://") || text.starts_with("https://") {
-            let _ = self.process_url_payload(
-                text,
-                chat_id,
-                msg.message_id,
-                None,
-                false,
-                None,
-                None,
-                None,
-                0,
-            ).await;
+            let _ = self
+                .process_url_payload(ProcessPayloadRequest {
+                    raw_url: text,
+                    chat_id,
+                    message_id: msg.message_id,
+                    ..Default::default()
+                })
+                .await;
         }
     }
 
@@ -780,15 +893,24 @@ impl SyncApp {
             };
             let text = render_dashboard_text(&state);
             let buttons = render_dashboard_buttons(&state);
-            let _ = self.tg.edit_message_text(chat_id, msg_id, &text, Some(buttons)).await;
+            let _ = self
+                .tg
+                .edit_message_text(chat_id, msg_id, &text, Some(buttons))
+                .await;
             let mut dashboards = self.user_dashboards.lock().await;
             dashboards.insert(chat_id, state);
         } else if data == "nav:main" {
             let (menu_text, buttons) = render_main_menu();
-            let _ = self.tg.edit_message_text(chat_id, msg_id, &menu_text, Some(buttons)).await;
+            let _ = self
+                .tg
+                .edit_message_text(chat_id, msg_id, &menu_text, Some(buttons))
+                .await;
         } else if data == "cancel" {
             let cancel_text = "❌ **ACTION CANCELLED**\n──────────────────────────────\nBuild or operation cancelled.";
-            let _ = self.tg.edit_message_text(chat_id, msg_id, cancel_text, None).await;
+            let _ = self
+                .tg
+                .edit_message_text(chat_id, msg_id, cancel_text, None)
+                .await;
         }
     }
 }

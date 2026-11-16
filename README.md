@@ -52,7 +52,7 @@ Powered by a high-performance native **Rust core engine** (built with Cargo, Tok
        ├─► Interactive /build Flow: App Select, Bitmask Extension Matrix, Input Prompts
        │
        ▼ (repository_dispatch: telegram_sync | track_build)
-[ GitHub Actions On-Demand Runner (Python 3.11) ]
+[ GitHub Actions On-Demand Runner (Native Rust Core v3.1.0) ]
        │
        ├─► Phase 1: High-Speed MTProto Binary Ingestion (up to 2 GB)
        │    └─► Live in-place throttled progress bar updates to Telegram
@@ -165,13 +165,19 @@ Configure in your Cloudflare Dashboard under **Workers & Pages ➔ telegramdropb
 
 ## 🔑 Generating Dropbox Permanent Refresh Token
 
-Dropbox access tokens expire after 4 hours. Run the included offline refresh token generator locally:
+Dropbox access tokens expire after 4 hours. Generate a permanent offline refresh token locally using either the native Rust CLI or the zero-dependency Python utility:
 
+#### Option A: Native Rust CLI (Recommended)
+```bash
+cargo run --release -- --oauth
+```
+
+#### Option B: Standalone Python Utility (Zero Dependencies)
 ```bash
 python get_refresh_token.py
 ```
 
-Follow the console instructions to authorize your Dropbox app and paste the generated `DROPBOX_REFRESH_TOKEN` into your GitHub repository secrets.
+Follow the console prompt to authorize your Dropbox app and paste the generated `DROPBOX_REFRESH_TOKEN` into your GitHub repository secrets.
 
 ---
 
@@ -214,6 +220,12 @@ Update custom tweak secret (`TWEAK_URL`) via command line:
 
 ```bash
 cargo run --release -- --set-tweak dtkace https://example.com/custom.deb
+```
+
+Run in interactive polling daemon mode (for local testing):
+
+```bash
+cargo run --release -- --daemon
 ```
 
 ---

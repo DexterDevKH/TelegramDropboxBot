@@ -190,7 +190,7 @@ jobs:
           LOG_LEVEL: ${{ github.event.inputs.log_level || 'INFO' }}
           GH_PAT: ${{ secrets.GH_PAT || secrets.PAT || secrets.GITHUB_TOKEN }}
         run: |
-          ./target/release/telegram_dropbox_bot || python bot.py
+          ./target/release/telegram_dropbox_bot
 
       - name: Auto-Purge Completed Workflow Runs
         if: always()
