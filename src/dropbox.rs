@@ -112,7 +112,17 @@ impl DropboxService {
             .build()
             .unwrap_or_default();
 
-        let initial_token = config.dropbox_access_token.clone();
+        // If refresh credentials exist, start with None so that get_valid_token()
+        // actively retrieves a fresh, verified access token rather than using
+        // an expired static access token from environment variables.
+        let initial_token = if config.dropbox_refresh_token.is_some()
+            && config.dropbox_app_key.is_some()
+            && config.dropbox_app_secret.is_some()
+        {
+            None
+        } else {
+            config.dropbox_access_token.clone()
+        };
 
         Self {
             config,
@@ -121,6 +131,11 @@ impl DropboxService {
             account_name: "Connected Cloud Account".to_string(),
             account_email: String::new(),
         }
+    }
+
+    pub async fn invalidate_token(&self) {
+        let mut lock = self.access_token.write().await;
+        *lock = None;
     }
 
     pub async fn refresh_access_token(&self) -> Result<String, String> {
@@ -182,7 +197,25 @@ impl DropboxService {
                 return Ok(tok.clone());
             }
         }
-        self.refresh_access_token().await
+        if self.config.dropbox_refresh_token.is_some()
+            && self.config.dropbox_app_key.is_some()
+            && self.config.dropbox_app_secret.is_some()
+        {
+            match self.refresh_access_token().await {
+                Ok(tok) => return Ok(tok),
+                Err(e) => {
+                    warn!("Failed to refresh Dropbox token: {}", e);
+                    if let Some(fallback) = &self.config.dropbox_access_token {
+                        return Ok(fallback.clone());
+                    }
+                    return Err(e);
+                }
+            }
+        }
+        if let Some(tok) = &self.config.dropbox_access_token {
+            return Ok(tok.clone());
+        }
+        Err("Missing Dropbox OAuth credentials: DROPBOX_REFRESH_TOKEN (with APP_KEY/SECRET) or DROPBOX_ACCESS_TOKEN must be configured.".to_string())
     }
 
     pub async fn initialize(&mut self) -> Result<bool, String> {
@@ -194,11 +227,8 @@ impl DropboxService {
         let token = match self.get_valid_token().await {
             Ok(tok) => tok,
             Err(e) => {
-                if self.config.dropbox_refresh_token.is_some() {
-                    self.refresh_access_token().await?
-                } else {
-                    return Err(e);
-                }
+                warn!("Failed to obtain Dropbox access token: {}", e);
+                return Ok(false);
             }
         };
 
@@ -211,26 +241,62 @@ impl DropboxService {
             .await
             .map_err(|e| format!("Account query failed: {}", e))?;
 
-        if resp.status().is_success() {
-            if let Ok(acc) = resp.json::<DropboxAccountResponse>().await {
-                self.account_name = acc.name.display_name.clone();
-                self.account_email = acc.email.clone();
-
-                if self.config.is_github_actions {
-                    register_github_mask(Some(&self.account_name));
-                    register_github_mask(Some(&self.account_email));
+        if !resp.status().is_success() {
+            let err_txt = resp.text().await.unwrap_or_default();
+            if (err_txt.contains("expired_access_token")
+                || err_txt.contains("invalid_access_token"))
+                && self.config.dropbox_refresh_token.is_some()
+            {
+                info!("Dropbox access token invalid/expired. Refreshing via OAuth...");
+                self.invalidate_token().await;
+                if let Ok(new_token) = self.refresh_access_token().await {
+                    if let Ok(retry_resp) =
+                        self.client.post(url).bearer_auth(&new_token).send().await
+                    {
+                        if retry_resp.status().is_success() {
+                            if let Ok(acc) = retry_resp.json::<DropboxAccountResponse>().await {
+                                self.account_name = acc.name.display_name.clone();
+                                self.account_email = acc.email.clone();
+                                if self.config.is_github_actions {
+                                    register_github_mask(Some(&self.account_name));
+                                    register_github_mask(Some(&self.account_email));
+                                }
+                                info!(
+                                    "Authenticated Dropbox Account: {}",
+                                    if self.config.privacy_mode {
+                                        "[PROTECTED/MASKED]"
+                                    } else {
+                                        &self.account_name
+                                    }
+                                );
+                                return Ok(true);
+                            }
+                        }
+                    }
                 }
-
-                if self.config.privacy_mode {
-                    info!("Authenticated Dropbox Account: [PROTECTED/MASKED]");
-                } else {
-                    info!(
-                        "Authenticated Dropbox Account: {} ({})",
-                        self.account_name, self.account_email
-                    );
-                }
-                return Ok(true);
             }
+            warn!("Dropbox account verification failed: {}", err_txt);
+            return Ok(false);
+        }
+
+        if let Ok(acc) = resp.json::<DropboxAccountResponse>().await {
+            self.account_name = acc.name.display_name.clone();
+            self.account_email = acc.email.clone();
+
+            if self.config.is_github_actions {
+                register_github_mask(Some(&self.account_name));
+                register_github_mask(Some(&self.account_email));
+            }
+
+            info!(
+                "Authenticated Dropbox Account: {}",
+                if self.config.privacy_mode {
+                    "[PROTECTED/MASKED]"
+                } else {
+                    &self.account_name
+                }
+            );
+            return Ok(true);
         }
 
         Ok(false)
@@ -458,7 +524,7 @@ impl DropboxService {
     where
         F: FnMut(u64, u64),
     {
-        let token = self.get_valid_token().await?;
+        let mut active_token = self.get_valid_token().await?;
         let metadata = std::fs::metadata(local_path)
             .map_err(|e| format!("Failed to read file metadata for {:?}: {}", local_path, e))?;
         let file_size = metadata.len();
@@ -484,7 +550,7 @@ impl DropboxService {
             let mut headers = HeaderMap::new();
             headers.insert(
                 AUTHORIZATION,
-                HeaderValue::from_str(&format!("Bearer {}", token)).unwrap(),
+                HeaderValue::from_str(&format!("Bearer {}", active_token)).unwrap(),
             );
             headers.insert(
                 "Dropbox-API-Arg",
@@ -499,14 +565,49 @@ impl DropboxService {
                 .client
                 .post("https://content.dropboxapi.com/2/files/upload")
                 .headers(headers)
-                .body(buffer)
+                .body(buffer.clone())
                 .send()
                 .await
                 .map_err(|e| format!("files/upload error: {}", e))?;
 
             if !resp.status().is_success() {
                 let err_text = resp.text().await.unwrap_or_default();
-                return Err(format!("files/upload failed: {}", err_text));
+                if err_text.contains("expired_access_token")
+                    && self.config.dropbox_refresh_token.is_some()
+                {
+                    warn!("Dropbox access token expired during upload. Refreshing token and retrying...");
+                    self.invalidate_token().await;
+                    let fresh_token = self.refresh_access_token().await?;
+                    active_token = fresh_token.clone();
+                    let mut retry_headers = HeaderMap::new();
+                    retry_headers.insert(
+                        AUTHORIZATION,
+                        HeaderValue::from_str(&format!("Bearer {}", fresh_token)).unwrap(),
+                    );
+                    retry_headers.insert(
+                        "Dropbox-API-Arg",
+                        HeaderValue::from_str(&serde_json::to_string(&commit_arg).unwrap())
+                            .unwrap(),
+                    );
+                    retry_headers.insert(
+                        CONTENT_TYPE,
+                        HeaderValue::from_static("application/octet-stream"),
+                    );
+                    let retry_resp = self
+                        .client
+                        .post("https://content.dropboxapi.com/2/files/upload")
+                        .headers(retry_headers)
+                        .body(buffer)
+                        .send()
+                        .await
+                        .map_err(|e| format!("files/upload retry error: {}", e))?;
+                    if !retry_resp.status().is_success() {
+                        let retry_err = retry_resp.text().await.unwrap_or_default();
+                        return Err(format!("files/upload failed: {}", retry_err));
+                    }
+                } else {
+                    return Err(format!("files/upload failed: {}", err_text));
+                }
             }
 
             progress_cb(file_size, file_size);
@@ -523,7 +624,7 @@ impl DropboxService {
             let mut start_headers = HeaderMap::new();
             start_headers.insert(
                 AUTHORIZATION,
-                HeaderValue::from_str(&format!("Bearer {}", token)).unwrap(),
+                HeaderValue::from_str(&format!("Bearer {}", active_token)).unwrap(),
             );
             start_headers.insert(
                 "Dropbox-API-Arg",
@@ -534,18 +635,54 @@ impl DropboxService {
                 HeaderValue::from_static("application/octet-stream"),
             );
 
-            let start_resp = self
+            let mut start_resp = self
                 .client
                 .post("https://content.dropboxapi.com/2/files/upload_session/start")
                 .headers(start_headers)
-                .body(first_chunk)
+                .body(first_chunk.clone())
                 .send()
                 .await
                 .map_err(|e| format!("upload_session/start error: {}", e))?;
 
             if !start_resp.status().is_success() {
                 let err_txt = start_resp.text().await.unwrap_or_default();
-                return Err(format!("upload_session/start failed: {}", err_txt));
+                if err_txt.contains("expired_access_token")
+                    && self.config.dropbox_refresh_token.is_some()
+                {
+                    warn!(
+                        "Dropbox token expired on session start. Refreshing token and retrying..."
+                    );
+                    self.invalidate_token().await;
+                    let fresh_token = self.refresh_access_token().await?;
+                    active_token = fresh_token.clone();
+                    let mut retry_start_headers = HeaderMap::new();
+                    retry_start_headers.insert(
+                        AUTHORIZATION,
+                        HeaderValue::from_str(&format!("Bearer {}", fresh_token)).unwrap(),
+                    );
+                    retry_start_headers.insert(
+                        "Dropbox-API-Arg",
+                        HeaderValue::from_str(&serde_json::to_string(&start_arg).unwrap()).unwrap(),
+                    );
+                    retry_start_headers.insert(
+                        CONTENT_TYPE,
+                        HeaderValue::from_static("application/octet-stream"),
+                    );
+                    start_resp = self
+                        .client
+                        .post("https://content.dropboxapi.com/2/files/upload_session/start")
+                        .headers(retry_start_headers)
+                        .body(first_chunk)
+                        .send()
+                        .await
+                        .map_err(|e| format!("upload_session/start retry error: {}", e))?;
+                    if !start_resp.status().is_success() {
+                        let retry_err = start_resp.text().await.unwrap_or_default();
+                        return Err(format!("upload_session/start failed: {}", retry_err));
+                    }
+                } else {
+                    return Err(format!("upload_session/start failed: {}", err_txt));
+                }
             }
 
             let start_data: DropboxUploadSessionStartResponse = start_resp
@@ -589,7 +726,7 @@ impl DropboxService {
                     let mut fin_headers = HeaderMap::new();
                     fin_headers.insert(
                         AUTHORIZATION,
-                        HeaderValue::from_str(&format!("Bearer {}", token)).unwrap(),
+                        HeaderValue::from_str(&format!("Bearer {}", active_token)).unwrap(),
                     );
                     fin_headers.insert(
                         "Dropbox-API-Arg",
@@ -630,7 +767,7 @@ impl DropboxService {
                     let mut app_headers = HeaderMap::new();
                     app_headers.insert(
                         AUTHORIZATION,
-                        HeaderValue::from_str(&format!("Bearer {}", token)).unwrap(),
+                        HeaderValue::from_str(&format!("Bearer {}", active_token)).unwrap(),
                     );
                     app_headers.insert(
                         "Dropbox-API-Arg",
@@ -713,7 +850,7 @@ impl DropboxService {
         let link_resp = self
             .client
             .post(create_link_url)
-            .bearer_auth(&token)
+            .bearer_auth(&active_token)
             .json(&link_body)
             .send()
             .await;
@@ -730,7 +867,7 @@ impl DropboxService {
                 if let Ok(list_resp) = self
                     .client
                     .post(list_link_url)
-                    .bearer_auth(&token)
+                    .bearer_auth(&active_token)
                     .json(&list_body)
                     .send()
                     .await
