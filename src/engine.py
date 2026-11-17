@@ -79,7 +79,6 @@ class SyncApp:
         }
         if target.get("hasExtensions"):
             if state.get("tweak"):
-                inputs["custom_tweak"] = "true"
                 inputs["tweak_url"] = state["tweak"]
             exts = get_extensions(target["key"])
             mask_hex = state.get("maskHex", "1fff")

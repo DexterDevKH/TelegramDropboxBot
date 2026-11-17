@@ -147,7 +147,6 @@ export function compileWorkflowInputs(state, target) {
 
   if (target.hasExtensions) {
     if (state.tweak) {
-      inputs.custom_tweak = "true";
       inputs.tweak_url = state.tweak;
     }
     const exts = getExtensions(target.key);
