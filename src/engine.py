@@ -220,7 +220,7 @@ class SyncApp:
                     f"• 📄 **File:**    `{filename}`\n"
                     f"• 📦 **Volume:**  `{format_size(current_bytes)}` / `{formatted_total_size}`\n"
                     f"• ⚡ **Speed:**   `{format_size(int(speed))}/s`  •  ⏳ **ETA:** `{format_eta(eta)}`\n"
-                    f"• 📊 **Progress:** {render_progress_bar(pct, 12)}"
+                    f"• 📊 **Progress:** {render_progress_bar(pct, 10)}"
                 )
                 await self.tg.safe_edit_message(status_msg, card)
 
@@ -288,7 +288,7 @@ class SyncApp:
                         f"• 📄 **File:**    `{final_filename}`\n"
                         f"• 📦 **Volume:**  `{format_size(current_bytes)}` / `{formatted_total_size}`\n"
                         f"• ⚡ **Speed:**   `{format_size(int(speed))}/s`  •  ⏳ **ETA:** `{format_eta(eta)}`\n"
-                        f"• 📊 **Progress:** {render_progress_bar(pct, 12)}"
+                        f"• 📊 **Progress:** {render_progress_bar(pct, 10)}"
                     )
                     asyncio.run_coroutine_threadsafe(
                         self.tg.safe_edit_message(status_msg, card), loop
@@ -520,7 +520,7 @@ class SyncApp:
                     f"• 📄 **File:**    `{initial_name}`\n"
                     f"• 📦 **Volume:**  `{format_size(current_bytes)}` / `{total_str}`\n"
                     f"• ⚡ **Speed:**   `{format_size(int(speed))}/s`  •  ⏳ **ETA:** `{format_eta(eta)}`\n"
-                    f"• 📊 **Progress:** {render_progress_bar(pct, 12)}"
+                    f"• 📊 **Progress:** {render_progress_bar(pct, 10)}"
                 )
                 asyncio.run_coroutine_threadsafe(
                     self.tg.safe_edit_message(status_msg, card), loop
@@ -622,7 +622,7 @@ class SyncApp:
                         f"• 📄 **File:**    `{final_filename}`\n"
                         f"• 📦 **Volume:**  `{format_size(current_bytes)}` / `{formatted_total_size}`\n"
                         f"• ⚡ **Speed:**   `{format_size(int(speed))}/s`  •  ⏳ **ETA:** `{format_eta(eta)}`\n"
-                        f"• 📊 **Progress:** {render_progress_bar(pct, 12)}"
+                        f"• 📊 **Progress:** {render_progress_bar(pct, 10)}"
                     )
                     asyncio.run_coroutine_threadsafe(
                         self.tg.safe_edit_message(status_msg, card), loop
