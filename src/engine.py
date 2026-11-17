@@ -184,9 +184,9 @@ class SyncApp:
         init_card = (
             "⏳ **INGESTING PAYLOAD**\n"
             "──────────────────────────────\n"
-            f"📄 **Filename:** `{filename}`\n"
-            f"📦 **Filesize:** `{formatted_total_size}`\n"
-            "⚡ **Status:** Connecting to Telegram MTProto..."
+            f"• 📄 **File:**    `{filename}`\n"
+            f"• 📦 **Volume:**  `{formatted_total_size}`\n"
+            "• ⚡ **Status:**  Connecting to Telegram MTProto..."
         )
 
         if not status_msg:
@@ -204,7 +204,7 @@ class SyncApp:
 
         async def download_progress_hook(current_bytes: int, total_bytes: int):
             now = time.time()
-            if (now - last_dl_update_ts[0] > 3.0) or (current_bytes >= total_bytes):
+            if (now - last_dl_update_ts[0] > 2.5) or (current_bytes >= total_bytes):
                 last_dl_update_ts[0] = now
                 pct = (current_bytes / total_bytes * 100.0) if total_bytes > 0 else 0.0
                 speed = dl_speed_tracker.update(current_bytes)
@@ -217,10 +217,10 @@ class SyncApp:
                 card = (
                     "⬇️ **DOWNLOADING FROM TELEGRAM**\n"
                     "──────────────────────────────\n"
-                    f"📄 **Filename:** `{filename}`\n"
-                    f"📦 **Received:** `{format_size(current_bytes)}` / `{formatted_total_size}`\n"
-                    f"⚡ **Speed:** `{format_size(int(speed))}/s`  •  ⏳ **ETA:** `{format_eta(eta)}`\n"
-                    f"📊 **Progress:** `{render_progress_bar(pct)}`"
+                    f"• 📄 **File:**    `{filename}`\n"
+                    f"• 📦 **Volume:**  `{format_size(current_bytes)}` / `{formatted_total_size}`\n"
+                    f"• ⚡ **Speed:**   `{format_size(int(speed))}/s`  •  ⏳ **ETA:** `{format_eta(eta)}`\n"
+                    f"• 📊 **Progress:** {render_progress_bar(pct, 12)}"
                 )
                 await self.tg.safe_edit_message(status_msg, card)
 
@@ -253,10 +253,10 @@ class SyncApp:
                 status_msg,
                 "☁️ **STREAMING TO DROPBOX**\n"
                 "──────────────────────────────\n"
-                f"📄 **Filename:** `{final_filename}`\n"
-                f"📦 **Filesize:** `{formatted_total_size}`\n"
-                f"⏱️ **Ingest Time:** `{download_duration:.1f}s`\n"
-                "⚡ **Status:** Initializing cloud transfer...",
+                f"• 📄 **File:**    `{final_filename}`\n"
+                f"• 📦 **Volume:**  `{formatted_total_size}`\n"
+                f"• ⏱️ **Ingest:**  `{download_duration:.1f}s`\n"
+                "• ⚡ **Status:**  Initializing cloud transfer...",
             )
 
             # Phase 2: Chunked Upload to Dropbox
@@ -272,7 +272,7 @@ class SyncApp:
 
             def dropbox_progress_hook(current_bytes: int, total_bytes: int):
                 now = time.time()
-                if (now - last_ul_update_ts[0] > 3.0) or (current_bytes >= total_bytes):
+                if (now - last_ul_update_ts[0] > 2.5) or (current_bytes >= total_bytes):
                     last_ul_update_ts[0] = now
                     pct = (current_bytes / total_bytes * 100.0) if total_bytes > 0 else 0.0
                     speed = ul_speed_tracker.update(current_bytes)
@@ -285,10 +285,10 @@ class SyncApp:
                     card = (
                         "☁️ **STREAMING TO DROPBOX**\n"
                         "──────────────────────────────\n"
-                        f"📄 **Filename:** `{final_filename}`\n"
-                        f"📦 **Uploaded:** `{format_size(current_bytes)}` / `{formatted_total_size}`\n"
-                        f"⚡ **Speed:** `{format_size(int(speed))}/s`  •  ⏳ **ETA:** `{format_eta(eta)}`\n"
-                        f"📊 **Progress:** `{render_progress_bar(pct)}`"
+                        f"• 📄 **File:**    `{final_filename}`\n"
+                        f"• 📦 **Volume:**  `{format_size(current_bytes)}` / `{formatted_total_size}`\n"
+                        f"• ⚡ **Speed:**   `{format_size(int(speed))}/s`  •  ⏳ **ETA:** `{format_eta(eta)}`\n"
+                        f"• 📊 **Progress:** {render_progress_bar(pct, 12)}"
                     )
                     asyncio.run_coroutine_threadsafe(
                         self.tg.safe_edit_message(status_msg, card), loop
@@ -310,20 +310,20 @@ class SyncApp:
             ul_speed = file_size / upload_duration if upload_duration > 0 else 0
 
             completion_card = (
-                "✅ **TRANSFER COMPLETE**\n"
+                "💎 **TRANSFER COMPLETE**\n"
                 "──────────────────────────────\n"
-                f"📄 **Filename:** `{final_filename}`\n"
-                f"📦 **Payload Size:** `{formatted_total_size}`\n"
-                f"📂 **Cloud Vault:** `{vault_display}`\n"
+                f"• 📄 **Filename:** `{final_filename}`\n"
+                f"• 📦 **Size:** `{formatted_total_size}`\n"
+                f"• 📂 **Vault:** `{vault_display}`\n"
             )
             if unzipped_from_archive:
-                completion_card += "📦 *Unzipped from archive: only the extracted file was uploaded.*\n"
+                completion_card += "  ℹ️ *Unzipped from archive: only the extracted file was uploaded.*\n"
 
             completion_card += (
-                "\n⏱️ **Performance Metrics**\n"
-                f"• ⬇️ **Telegram Ingest:** `{download_duration:.1f}s` (`{format_size(int(dl_speed))}/s`)\n"
-                f"• ☁️ **Dropbox Push:** `{upload_duration:.1f}s` (`{format_size(int(ul_speed))}/s`)\n"
-                f"• ⏱️ **Total Elapsed:** `{total_duration:.1f}s`\n"
+                f"\n⏱️ **Benchmarks**\n"
+                f"• ⬇️ Ingest: `{download_duration:.1f}s` (`{format_size(int(dl_speed))}/s`)\n"
+                f"• ☁️ Cloud: `{upload_duration:.1f}s` (`{format_size(int(ul_speed))}/s`)\n"
+                f"• ⏱️ Total: `{total_duration:.1f}s` elapsed\n"
             )
 
             if pruned_items:
@@ -479,10 +479,10 @@ class SyncApp:
         init_card = (
             "⏳ **INGESTING URL PAYLOAD**\n"
             "──────────────────────────────\n"
-            f"🔗 **Source:** `{source_label}`\n"
-            f"📄 **Target:** `{initial_name}`\n"
-            f"📦 **Filesize:** `{formatted_initial_size}`\n"
-            "⚡ **Status:** Connecting to remote server..."
+            f"• 🔗 **Source:** `{source_label}`\n"
+            f"• 📄 **File:**   `{initial_name}`\n"
+            f"• 📦 **Volume:** `{formatted_initial_size}`\n"
+            "• ⚡ **Status:** Connecting to remote server..."
         )
 
         if not status_msg:
@@ -502,7 +502,7 @@ class SyncApp:
 
         def download_progress_hook(current_bytes: int, total_bytes: int):
             now = time.time()
-            if (now - last_dl_update_ts[0] > 3.0) or (total_bytes > 0 and current_bytes >= total_bytes):
+            if (now - last_dl_update_ts[0] > 2.5) or (total_bytes > 0 and current_bytes >= total_bytes):
                 last_dl_update_ts[0] = now
                 pct = (current_bytes / total_bytes * 100.0) if total_bytes > 0 else 0.0
                 speed = dl_speed_tracker.update(current_bytes)
@@ -517,10 +517,10 @@ class SyncApp:
                 card = (
                     f"⬇️ **DOWNLOADING FROM {source_title}**\n"
                     "──────────────────────────────\n"
-                    f"📄 **File:** `{initial_name}`\n"
-                    f"📦 **Received:** `{format_size(current_bytes)}` / `{total_str}`\n"
-                    f"⚡ **Speed:** `{format_size(int(speed))}/s`  •  ⏳ **ETA:** `{format_eta(eta)}`\n"
-                    f"📊 **Progress:** `{render_progress_bar(pct)}`"
+                    f"• 📄 **File:**    `{initial_name}`\n"
+                    f"• 📦 **Volume:**  `{format_size(current_bytes)}` / `{total_str}`\n"
+                    f"• ⚡ **Speed:**   `{format_size(int(speed))}/s`  •  ⏳ **ETA:** `{format_eta(eta)}`\n"
+                    f"• 📊 **Progress:** {render_progress_bar(pct, 12)}"
                 )
                 asyncio.run_coroutine_threadsafe(
                     self.tg.safe_edit_message(status_msg, card), loop
@@ -619,10 +619,10 @@ class SyncApp:
                     card = (
                         "☁️ **STREAMING TO DROPBOX**\n"
                         "──────────────────────────────\n"
-                        f"📄 **Filename:** `{final_filename}`\n"
-                        f"📦 **Uploaded:** `{format_size(current_bytes)}` / `{formatted_total_size}`\n"
-                        f"⚡ **Speed:** `{format_size(int(speed))}/s`  •  ⏳ **ETA:** `{format_eta(eta)}`\n"
-                        f"📊 **Progress:** `{render_progress_bar(pct)}`"
+                        f"• 📄 **File:**    `{final_filename}`\n"
+                        f"• 📦 **Volume:**  `{format_size(current_bytes)}` / `{formatted_total_size}`\n"
+                        f"• ⚡ **Speed:**   `{format_size(int(speed))}/s`  •  ⏳ **ETA:** `{format_eta(eta)}`\n"
+                        f"• 📊 **Progress:** {render_progress_bar(pct, 12)}"
                     )
                     asyncio.run_coroutine_threadsafe(
                         self.tg.safe_edit_message(status_msg, card), loop
@@ -644,25 +644,26 @@ class SyncApp:
             ul_speed = file_size / upload_duration if upload_duration > 0 else 0
 
             completion_card = (
-                "✅ **TRANSFER COMPLETE**\n"
+                "💎 **TRANSFER COMPLETE**\n"
                 "──────────────────────────────\n"
-                f"📄 **Filename:** `{final_filename}`\n"
-                f"📦 **Payload Size:** `{formatted_total_size}`\n"
-                f"📂 **Cloud Vault:** `{vault_display}`\n"
+                f"• 📄 **Filename:** `{final_filename}`\n"
+                f"• 📦 **Size:** `{formatted_total_size}`\n"
+                f"• 📂 **Vault:** `{vault_display}`\n"
             )
             if is_artifact:
-                completion_card += f"🔗 **Source:** GitHub Actions Artifact (`{artifact_repo}`)\n"
+                completion_card += f"• 🔗 **Source:** GitHub Actions Artifact (`{artifact_repo}`)\n"
                 if extracted_single_file:
-                    completion_card += "📦 *Extracted single binary from artifact zip archive.*\n"
-                completion_card += "\n"
+                    completion_card += "  ℹ️ *Extracted single binary from artifact zip archive.*\n"
             else:
-                completion_card += f"🔗 **Source:** Remote Web Link\n\n"
+                completion_card += "• 🔗 **Source:** Remote Web Link\n"
+                if extracted_single_file:
+                    completion_card += "  ℹ️ *Extracted single binary from downloaded zip archive.*\n"
 
             completion_card += (
-                "⏱️ **Performance Metrics**\n"
-                f"• ⬇️ **Ingest Time:** `{download_duration:.1f}s` (`{format_size(int(dl_speed))}/s`)\n"
-                f"• ☁️ **Dropbox Push:** `{upload_duration:.1f}s` (`{format_size(int(ul_speed))}/s`)\n"
-                f"• ⏱️ **Total Elapsed:** `{total_duration:.1f}s`\n"
+                f"\n⏱️ **Benchmarks**\n"
+                f"• ⬇️ Ingest: `{download_duration:.1f}s` (`{format_size(int(dl_speed))}/s`)\n"
+                f"• ☁️ Cloud: `{upload_duration:.1f}s` (`{format_size(int(ul_speed))}/s`)\n"
+                f"• ⏱️ Total: `{total_duration:.1f}s` elapsed\n"
             )
 
             if pruned_items:

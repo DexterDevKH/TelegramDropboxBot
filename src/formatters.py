@@ -35,12 +35,13 @@ def format_eta(seconds: float) -> str:
         return f"{s // 3600}h {(s % 3600) // 60}m"
 
 def render_progress_bar(percent: float, bar_length: int = 12) -> str:
-    """Renders a sleek visual block progress bar: [████████░░░░] 66.7%"""
+    """Renders an ultra-sleek visual block progress bar: ▰▰▰▰▰▰▰▰▱▱▱▱ 66.7%"""
     clamped = max(0.0, min(100.0, percent))
     filled = int(round(bar_length * (clamped / 100.0)))
     filled = max(0, min(bar_length, filled))
-    bar = "█" * filled + "░" * (bar_length - filled)
-    return f"[{bar}] {clamped:.1f}%"
+    unfilled = bar_length - filled
+    bar = "▰" * filled + "▱" * unfilled
+    return f"{bar} {clamped:.1f}%"
 
 def sanitize_filename(name: str) -> str:
     """Sanitizes filename for cross-platform cloud storage safety."""
